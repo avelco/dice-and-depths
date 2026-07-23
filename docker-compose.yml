@@ -1,0 +1,31 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev", "--", "--host"]
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dd-dev-http.rule=Host(`dd.surfingbird.space`)"
+      - "traefik.http.routers.dd-dev-http.entrypoints=web"
+      - "traefik.http.routers.dd-dev-http.middlewares=redirect-to-https-dd-dev"
+      - "traefik.http.routers.dd-dev.rule=Host(`dd.surfingbird.space`)"
+      - "traefik.http.routers.dd-dev.entrypoints=websecure"
+      - "traefik.http.routers.dd-dev.tls=true"
+      - "traefik.http.routers.dd-dev.tls.certresolver=myresolver"
+      - "traefik.http.services.dd-dev.loadbalancer.server.port=5173"
+      - "traefik.http.middlewares.redirect-to-https-dd-dev.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https-dd-dev.redirectscheme.permanent=true"
+    networks:
+      - service_network
+
+networks:
+  service_network:
+    external: true
