@@ -1,4 +1,7 @@
 import Phaser from 'phaser'
+import { pixelTextStyle, applyPixelTextSharpness } from './pixelText'
+import { combatTextStyle, applyCombatTextSharpness } from './combatText'
+import type { UiFont } from './HealthBar'
 
 const DIE_SIZE = 14
 
@@ -12,22 +15,20 @@ export class DieSprite extends Phaser.GameObjects.Container {
 
   onReroll: (() => void) | null = null
 
-  constructor(scene: Phaser.Scene, x: number, y: number, size = DIE_SIZE) {
+  constructor(scene: Phaser.Scene, x: number, y: number, size = DIE_SIZE, uiFont: UiFont = 'pixel') {
     super(scene, x, y)
     this._size = size
 
     this.bg = scene.add.graphics()
     this.add(this.bg)
 
-    this.label = scene.add.text(0, 0, '1', {
-      fontSize: `${Math.round(size * 0.75)}px`,
-      color: '#ffffff',
-      fontFamily: 'monospace',
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 2,
-    })
+    const dieStyle = uiFont === 'combat'
+      ? combatTextStyle({ fontSize: '20px', color: '#ffffff' })
+      : pixelTextStyle({ fontSize: '8px', color: '#ffffff' })
+    this.label = scene.add.text(0, 0, '1', dieStyle)
     this.label.setOrigin(0.5)
+    if (uiFont === 'combat') applyCombatTextSharpness(this.label)
+    else applyPixelTextSharpness(this.label)
     this.add(this.label)
 
     this.hitZone = scene.add

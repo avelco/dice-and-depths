@@ -1,4 +1,7 @@
 import Phaser from 'phaser'
+import { addPixelText } from './pixelText'
+import { addCombatText } from './combatText'
+import type { UiFont } from './HealthBar'
 
 export class DamageNumbers {
   static show(
@@ -7,15 +10,12 @@ export class DamageNumbers {
     y: number,
     value: number,
     color = '#ff4444',
+    uiFont: UiFont = 'pixel',
   ) {
-    const txt = scene.add.text(x, y, String(value), {
-      fontSize: '14px',
-      color,
-      fontFamily: 'monospace',
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 3,
-    })
+    const style = { fontSize: uiFont === 'combat' ? '28px' : '12px', color }
+    const txt = uiFont === 'combat'
+      ? addCombatText(scene, x, y, String(value), style)
+      : addPixelText(scene, x, y, String(value), style)
     txt.setOrigin(0.5)
     txt.setDepth(50)
 

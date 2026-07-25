@@ -1,1 +1,42 @@
-[]
+[
+  {
+    "id": "slime",
+    "name": "Slime",
+    "roles": ["combat"],
+    "baseHp": 10,
+    "baseDef": 1,
+    "skill": "split"
+  },
+  {
+    "id": "skeleton",
+    "name": "Esqueleto",
+    "roles": ["combat"],
+    "baseHp": 12,
+    "baseDef": 2,
+    "skill": "bone_toss"
+  },
+  {
+    "id": "bandit",
+    "name": "Bandido",
+    "roles": ["elite"],
+    "baseHp": 16,
+    "baseDef": 3,
+    "skill": "steal"
+  },
+  {
+    "id": "spectre",
+    "name": "Espectro",
+    "roles": ["elite"],
+    "baseHp": 14,
+    "baseDef": 2,
+    "skill": "phase"
+  },
+  {
+    "id": "golem",
+    "name": "Golem",
+    "roles": ["boss"],
+    "baseHp": 28,
+    "baseDef": 5,
+    "skill": "slam"
+  }
+]

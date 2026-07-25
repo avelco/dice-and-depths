@@ -1,6 +1,9 @@
 import Phaser from 'phaser'
-import { getRunState, renderDebugHeader } from '../debug'
-import type { RunState } from '../domain/progression/RunState'
+import { addPixelText } from '../ui/pixelText'
+import { createNewRun } from '../domain/progression/RunState'
+import { MetaProgression } from '../domain/progression/MetaProgression'
+import { generateFloorMap } from '../domain/map/FloorGenerator'
+import { SaveSystem } from '../systems/SaveSystem'
 
 interface CharacterEntry {
   name: string
@@ -17,10 +20,14 @@ const CHARACTERS: CharacterEntry[] = [
   { name: 'Explorador', lore: 'Rastreador experto en supervivencia.', locked: true },
 ]
 
+function isLocked(char: CharacterEntry): boolean {
+  if (char.name === 'Pícaro') return !MetaProgression.isRogueUnlocked()
+  return char.locked
+}
+
 export class CharacterSelectScene extends Phaser.Scene {
   private selectedIndex = 0
   private inputLocked = false
-  private runState?: RunState
   private nameText!: Phaser.GameObjects.Text
   private loreText!: Phaser.GameObjects.Text
   private lockedText!: Phaser.GameObjects.Text
@@ -36,63 +43,49 @@ export class CharacterSelectScene extends Phaser.Scene {
     const { width, height } = this.cameras.main
     const cx = width / 2
 
-    const rs = getRunState(this)
-    if (rs) {
-      this.runState = rs
-      renderDebugHeader(this, rs)
-    }
-
-    this.add.text(cx, 24, 'SELECCIONA PERSONAJE', {
-      fontSize: '10px',
+    addPixelText(this, cx, 24, 'SELECCIONA PERSONAJE', {
+      fontSize: '16px',
       color: '#ffffff',
-      fontFamily: 'monospace',
     }).setOrigin(0.5)
 
-    this.leftArrow = this.add.text(cx - 120, height / 2, '<', {
-      fontSize: '14px',
+    this.leftArrow = addPixelText(this, cx - 120, height / 2, '<', {
+      fontSize: '16px',
       color: '#ffffff',
-      fontFamily: 'monospace',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true })
 
-    this.rightArrow = this.add.text(cx + 120, height / 2, '>', {
-      fontSize: '14px',
+    this.rightArrow = addPixelText(this, cx + 120, height / 2, '>', {
+      fontSize: '16px',
       color: '#ffffff',
-      fontFamily: 'monospace',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true })
 
     this.leftArrow.on('pointerdown', () => this.navigate(-1))
     this.rightArrow.on('pointerdown', () => this.navigate(1))
 
-    this.nameText = this.add.text(cx, height / 2 - 8, '', {
-      fontSize: '12px',
+    this.nameText = addPixelText(this, cx, height / 2 - 8, '', {
+      fontSize: '16px',
       color: '#ffffff',
-      fontFamily: 'monospace',
     }).setOrigin(0.5)
 
-    this.loreText = this.add.text(cx, height / 2 + 10, '', {
-      fontSize: '7px',
-      color: '#888888',
-      fontFamily: 'monospace',
-      wordWrap: { width: 200 },
+    this.loreText = addPixelText(this, cx, height / 2 + 14, '', {
+      fontSize: '8px',
+      color: '#aaaaaa',
+      wordWrap: { width: 220 },
       align: 'center',
     }).setOrigin(0.5)
 
-    this.lockedText = this.add.text(cx, height / 2 + 32, '', {
+    this.lockedText = addPixelText(this, cx, height / 2 + 36, '', {
       fontSize: '8px',
-      color: '#cc4444',
-      fontFamily: 'monospace',
+      color: '#cc6666',
     }).setOrigin(0.5)
 
-    this.confirmPrompt = this.add.text(cx, height - 24, 'Enter: seleccionar', {
-      fontSize: '6px',
-      color: '#555555',
-      fontFamily: 'monospace',
+    this.confirmPrompt = addPixelText(this, cx, height - 24, 'Enter: seleccionar', {
+      fontSize: '8px',
+      color: '#777777',
     }).setOrigin(0.5)
 
-    this.add.text(cx, height - 12, 'ESC: volver', {
-      fontSize: '6px',
-      color: '#555555',
-      fontFamily: 'monospace',
+    addPixelText(this, cx, height - 12, 'ESC: volver', {
+      fontSize: '8px',
+      color: '#777777',
     }).setOrigin(0.5)
 
     this.refresh()
@@ -111,22 +104,26 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private refresh() {
     const char = CHARACTERS[this.selectedIndex]
+    const locked = isLocked(char)
     this.nameText.setText(char.name)
     this.loreText.setText(char.lore)
-    this.lockedText.setText(char.locked ? 'BLOQUEADO' : '')
-    this.confirmPrompt.setText(char.locked ? 'Requiere desbloqueo en la Forja' : 'Enter: seleccionar')
+    this.lockedText.setText(locked ? 'BLOQUEADO' : '')
+    this.confirmPrompt.setText(locked ? 'Requiere polvo meta (Game Over)' : 'Enter: seleccionar')
   }
 
   private confirm() {
     if (this.inputLocked) return
     const char = CHARACTERS[this.selectedIndex]
-    if (char.locked) return
+    if (isLocked(char)) return
     this.inputLocked = true
-    const data: { runState?: RunState } = {}
-    if (this.runState) {
-      this.runState.characterName = char.name
-      data.runState = this.runState
-    }
-    this.time.delayedCall(150, () => this.scene.start('MapScene', data))
+
+    const state = createNewRun(char.name)
+    MetaProgression.applyStartBonuses(state)
+    state.map = generateFloorMap(state.seed, state.floor)
+    const start = state.map.nodes.find(n => n.kind === 'start')
+    state.currentNodeId = start?.id ?? null
+    SaveSystem.save('quicksave', state)
+
+    this.time.delayedCall(150, () => this.scene.start('MapScene', { runState: state }))
   }
 }

@@ -1,4 +1,19 @@
 import Phaser from 'phaser'
+import { pixelTextStyle, applyPixelTextSharpness } from './pixelText'
+import { combatTextStyle, applyCombatTextSharpness } from './combatText'
+
+export type UiFont = 'pixel' | 'combat'
+
+function labelStyle(font: UiFont, size: string, color: string) {
+  return font === 'combat'
+    ? combatTextStyle({ fontSize: size, color })
+    : pixelTextStyle({ fontSize: size, color })
+}
+
+function sharpen(txt: Phaser.GameObjects.Text, font: UiFont) {
+  if (font === 'combat') applyCombatTextSharpness(txt)
+  else applyPixelTextSharpness(txt)
+}
 
 export class HealthBar extends Phaser.GameObjects.Container {
   private bgGfx: Phaser.GameObjects.Graphics
@@ -22,6 +37,7 @@ export class HealthBar extends Phaser.GameObjects.Container {
     maxValue: number,
     color: number,
     label: string,
+    uiFont: UiFont = 'pixel',
   ) {
     super(scene, x, y)
 
@@ -37,35 +53,19 @@ export class HealthBar extends Phaser.GameObjects.Container {
     this.fillGfx = scene.add.graphics()
     this.add(this.fillGfx)
 
-    this.nameText = scene.add.text(0, -14, label, {
-      fontSize: '9px',
-      color: '#eeeeee',
-      fontFamily: 'monospace',
-      stroke: '#000000',
-      strokeThickness: 2,
-    })
+    this.nameText = scene.add.text(0, -14, label, labelStyle(uiFont, uiFont === 'combat' ? '20px' : '8px', '#eeeeee'))
     this.nameText.setOrigin(0, 0.5)
+    sharpen(this.nameText, uiFont)
     this.add(this.nameText)
 
-    this.hpText = scene.add.text(w / 2, h / 2, '', {
-      fontSize: '9px',
-      color: '#ffffff',
-      fontFamily: 'monospace',
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 3,
-    })
+    this.hpText = scene.add.text(w / 2, h / 2, '', labelStyle(uiFont, uiFont === 'combat' ? '20px' : '8px', '#ffffff'))
     this.hpText.setOrigin(0.5)
+    sharpen(this.hpText, uiFont)
     this.add(this.hpText)
 
-    this.defText = scene.add.text(0, h + 4, '', {
-      fontSize: '8px',
-      color: '#99ddff',
-      fontFamily: 'monospace',
-      stroke: '#000000',
-      strokeThickness: 2,
-    })
+    this.defText = scene.add.text(0, h + 4, '', labelStyle(uiFont, uiFont === 'combat' ? '20px' : '8px', '#99ddff'))
     this.defText.setOrigin(0, 0)
+    sharpen(this.defText, uiFont)
     this.add(this.defText)
 
     this.redraw()

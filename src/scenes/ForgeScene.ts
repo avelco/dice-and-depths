@@ -16,13 +16,13 @@ export class ForgeScene extends Phaser.Scene {
     this.add.text(cx, height / 2 - 8, 'Forja', {
       fontSize: '12px',
       color: '#cccccc',
-      fontFamily: 'monospace',
+      fontFamily: '"Silkscreen"',
     }).setOrigin(0.5)
 
     this.add.text(cx, height - 16, 'ESC: menu', {
       fontSize: '6px',
       color: '#555555',
-      fontFamily: 'monospace',
+      fontFamily: '"Silkscreen"',
     }).setOrigin(0.5)
 
     this.input.keyboard!.on('keydown-ESC', () => this.scene.start('MenuScene'))

@@ -21,7 +21,7 @@ export class SlotView extends Phaser.GameObjects.Container {
     this.label = scene.add.text(0, 0, title, {
       fontSize: '7px',
       color: '#888888',
-      fontFamily: 'monospace',
+      fontFamily: '"Silkscreen"',
     })
     this.label.setOrigin(0.5, 0.5)
     this.add(this.label)

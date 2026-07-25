@@ -9,6 +9,7 @@ import { RewardScene } from './scenes/RewardScene'
 import { EventScene } from './scenes/EventScene'
 import { ShopScene } from './scenes/ShopScene'
 import { ForgeScene } from './scenes/ForgeScene'
+import { RestScene } from './scenes/RestScene'
 import { GameOverScene } from './scenes/GameOverScene'
 import { createDebugState } from './debug'
 import { SaveSystem } from './systems/SaveSystem'
@@ -18,9 +19,17 @@ const game = new Phaser.Game({
   type: Phaser.AUTO,
   width: 480,
   height: 270,
-  pixelArt: true,
   parent: 'app',
   backgroundColor: '#1a1a2e',
+  pixelArt: true,
+  antialias: false,
+  roundPixels: true,
+  render: {
+    pixelArt: true,
+    antialias: false,
+    roundPixels: true,
+    powerPreference: 'high-performance',
+  },
   scene: [
     BootScene,
     PreloadScene,
@@ -31,6 +40,7 @@ const game = new Phaser.Game({
     RewardScene,
     EventScene,
     ShopScene,
+    RestScene,
     ForgeScene,
     GameOverScene,
   ],

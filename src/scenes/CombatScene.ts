@@ -1,8 +1,10 @@
 import Phaser from 'phaser'
-import { getRunState, renderDebugHeader } from '../debug'
+import { getRunState, effectiveRerollMax, applyPassiveOnKill, trySecondWind } from '../debug'
+import { SaveSystem } from '../systems/SaveSystem'
 import { HealthBar } from '../ui/HealthBar'
 import { DieSprite } from '../ui/DieSprite'
 import { DamageNumbers } from '../ui/DamageNumbers'
+import { addPixelText } from '../ui/pixelText'
 import { Enemy } from '../domain/enemies/Enemy'
 import { CombatEngine } from '../domain/combat/CombatEngine'
 import type { RunState } from '../domain/progression/RunState'
@@ -11,15 +13,18 @@ const DIE_SIZE = 14
 const DIE_GAP = 4
 const DEF_COLOR = 0x4488cc
 const DEF_MAX = 18
-
-const FONT = 'monospace'
-const STROKE = { stroke: '#000000', strokeThickness: 2 } as const
+/** Path band Y — kept above HP bars (sectY ≈ 110). */
+const GROUND_Y = 84
+const ENEMY_X_OFFSET = 60
+const QUEUE_STEP_X = 10
+const QUEUE_STEP_Y = -7
 
 type DiceGroup = 'atk' | 'def' | 'mul'
 
 export class CombatScene extends Phaser.Scene {
   private state!: RunState
   private enemy!: Enemy
+  private wave: Enemy[] = []
 
   private heroHpBar!: HealthBar
   private heroDefBar!: HealthBar
@@ -29,10 +34,6 @@ export class CombatScene extends Phaser.Scene {
   private atkDice: DieSprite[] = []
   private defDice: DieSprite[] = []
   private mulDice!: DieSprite
-
-  private atkLabel!: Phaser.GameObjects.Text
-  private defLabel!: Phaser.GameObjects.Text
-  private mulLabel!: Phaser.GameObjects.Text
 
   private atkRerollBtn!: Phaser.GameObjects.Zone
   private defRerollBtn!: Phaser.GameObjects.Zone
@@ -54,6 +55,7 @@ export class CombatScene extends Phaser.Scene {
   private heroGfx!: Phaser.GameObjects.Graphics
   private enemyGfx!: Phaser.GameObjects.Graphics
   private enemyNameText!: Phaser.GameObjects.Text
+  private queueGfx: Phaser.GameObjects.Graphics[] = []
   private pathGfx!: Phaser.GameObjects.Graphics
   private shakeTimers = new Map<object, Phaser.Time.TimerEvent>()
 
@@ -71,6 +73,8 @@ export class CombatScene extends Phaser.Scene {
   init() {
     this.atkDice = []
     this.defDice = []
+    this.wave = []
+    this.queueGfx = []
     this.attacking = false
     this.shakeTimers.clear()
     this.children.removeAll(true)
@@ -80,26 +84,24 @@ export class CombatScene extends Phaser.Scene {
     const { width, height } = this.cameras.main
 
     const rs = getRunState(this)
-    if (rs) this.state = rs
-    else {
-      this.state = {
-        floor: 1, gold: 0, maxHp: 30, hp: 30,
-        dice: 3, rerolls: 1, characterName: '???', seed: 0,
-      } as RunState
+    if (!rs) {
+      this.scene.start('MenuScene')
+      return
     }
-    renderDebugHeader(this, this.state)
+    this.state = rs
 
-    this.enemy = Enemy.forFloor(this.state.floor)
-    this.rerolls = { atk: 4, def: 3, mul: 1 }
+    const kind = this.state.pendingNodeKind ?? 'combat'
+    this.wave = Enemy.waveForNode(kind, this.state.floor, this.state.seed)
+    this.enemy = this.wave[0]
+    this.rerolls = { ...effectiveRerollMax(this.state) }
 
     this.drawSection1()
     this.drawSection2()
     this.drawSection3()
     this.preRollAll()
 
-    this.add
-      .text(width / 2, height - 8, 'ESC: mapa', {
-        fontSize: '8px', color: '#aaaaaa', fontFamily: FONT, ...STROKE,
+    addPixelText(this, width / 2, height - 8, 'ESC: mapa', {
+        fontSize: '8px', color: '#aaaaaa', 
       })
       .setOrigin(0.5).setDepth(10)
 
@@ -112,7 +114,8 @@ export class CombatScene extends Phaser.Scene {
 
   private drawSection1() {
     const { width } = this.cameras.main
-    const groundY = 100
+    const groundY = GROUND_Y
+    const enemyX = width - ENEMY_X_OFFSET
 
     const sky = this.add.graphics()
     sky.fillStyle(0x1a1a2e, 1)
@@ -134,17 +137,52 @@ export class CombatScene extends Phaser.Scene {
 
     this.heroGfx = this.add.graphics()
     this.drawCharacter(this.heroGfx, 60, groundY - 14, 0x4488cc)
-    this.add
-      .text(60, groundY - 22, this.state.characterName, {
-        fontSize: '9px', color: '#cceeff', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    addPixelText(this, 60, groundY - 22, this.state.characterName, {
+      fontSize: '8px', color: '#cceeff',
+    }).setOrigin(0.5)
+
+    this.redrawEnemyQueue()
 
     this.enemyGfx = this.add.graphics()
-    this.drawCharacter(this.enemyGfx, width - 60, groundY - 14, 0xcc4444)
-    this.enemyNameText = this.add
-      .text(width - 60, groundY - 22, this.enemy.name, {
-        fontSize: '9px', color: '#ffcccc', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.enemyGfx.setDepth(2)
+    this.drawCharacter(this.enemyGfx, enemyX, groundY - 14, 0xcc4444)
+    this.enemyNameText = addPixelText(this, enemyX, groundY - 22, this.enemy.name, {
+      fontSize: '8px', color: '#ffcccc',
+    }).setOrigin(0.5).setDepth(2)
+  }
+
+  /** Upcoming foes stacked behind current: next → last, offset up/right. */
+  private redrawEnemyQueue() {
+    for (const g of this.queueGfx) g.destroy()
+    this.queueGfx = []
+
+    const { width } = this.cameras.main
+    const enemyX = width - ENEMY_X_OFFSET
+    const baseY = GROUND_Y - 14
+    const upcoming = this.wave.slice(1)
+
+    // Draw last → next so next sits on top of the stack
+    for (let i = upcoming.length - 1; i >= 0; i--) {
+      const step = i + 1
+      const g = this.add.graphics()
+      g.setAlpha(0.75 - i * 0.15)
+      g.setDepth(1)
+      this.drawCharacter(
+        g,
+        enemyX + step * QUEUE_STEP_X,
+        baseY + step * QUEUE_STEP_Y,
+        0xaa5555,
+      )
+      this.queueGfx.push(g)
+    }
+  }
+
+  private bindEnemyBars() {
+    this.enemyHpBar.setMax(this.enemy.maxHp)
+    this.enemyHpBar.setValue(this.enemy.hp)
+    this.enemyDefBar.setMax(Math.max(this.enemy.defense + 4, 8))
+    this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.enemyNameText.setText(this.enemy.name)
   }
 
   private drawCharacter(
@@ -171,13 +209,13 @@ export class CombatScene extends Phaser.Scene {
     const hpY = sectY + 4
     this.heroHpBar = new HealthBar(
       this, 12, hpY, barW, barH,
-      this.state.maxHp, 0x44aa44, this.state.characterName,
+      this.state.maxHp, 0x44aa44, '',
     )
     this.heroHpBar.setValue(this.state.hp)
 
     this.enemyHpBar = new HealthBar(
       this, width - 152, hpY, barW, barH,
-      this.enemy.maxHp, 0xcc4444, this.enemy.name,
+      this.enemy.maxHp, 0xcc4444, '',
     )
     this.enemyHpBar.setValue(this.enemy.hp)
 
@@ -189,9 +227,9 @@ export class CombatScene extends Phaser.Scene {
 
     this.enemyDefBar = new HealthBar(
       this, width - 152, defY, barW, barH,
-      this.enemy.defense, DEF_COLOR, '',
+      Math.max(this.enemy.defense + 4, 8), DEF_COLOR, '',
     )
-    this.enemyDefBar.setValue(this.enemy.defense)
+    this.enemyDefBar.setValue(this.enemy.totalDefense)
 
     // Attack button centered between HP and DEF rows
     this.btnW = 56
@@ -202,10 +240,9 @@ export class CombatScene extends Phaser.Scene {
     this.attackBtnBg = this.add.graphics()
     this.redrawAttackBtnDefault()
 
-    this.attackBtnTxt = this.add
-      .text(cx, this.btnY + this.btnH / 2, 'ATACAR', {
-        fontSize: '10px', color: '#ffffff', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.attackBtnTxt = addPixelText(this, cx, this.btnY + this.btnH / 2, 'ATACAR', {
+      fontSize: '8px', color: '#ffffff',
+    }).setOrigin(0.5)
 
     this.attackBtnZone = this.add
       .zone(cx, this.btnY + this.btnH / 2, this.btnW, this.btnH)
@@ -237,100 +274,99 @@ export class CombatScene extends Phaser.Scene {
   // ── Section 3: Dice ───────────────────────────────────────
 
   private drawSection3() {
-    const baseY = 190
-    const previewY = baseY - 28
-    const comboY = baseY - 18
-    const diceRowY = baseY + DIE_SIZE * 0.8
-    const rerollBtnY = diceRowY + DIE_SIZE * 0.9
+    const { width } = this.cameras.main
+    const panelY = 150
+    const panelH = 108
+    const panel = this.add.graphics()
+    panel.fillStyle(0x12121c, 0.85)
+    panel.fillRoundedRect(8, panelY, width - 16, panelH, 4)
+    panel.lineStyle(1, 0x333344, 1)
+    panel.strokeRoundedRect(8, panelY, width - 16, panelH, 4)
 
-    // Previews aligned above each dice group
-    this.dmgPreviewTxt = this.add
-      .text(100, previewY, 'DMG 0', {
-        fontSize: '12px', color: '#ff8888', fontFamily: FONT, fontStyle: 'bold', ...STROKE,
-      }).setOrigin(0.5)
+    const ATK_X = 100
+    const DEF_X = 240
+    const MUL_X = 380
 
-    this.defPreviewTxt = this.add
-      .text(240, previewY, 'DEF 0', {
-        fontSize: '12px', color: '#99ccff', fontFamily: FONT, fontStyle: 'bold', ...STROKE,
-      }).setOrigin(0.5)
+    // Rows with clear gaps — Silkscreen needs ~14px between lines
+    const statY = 154
+    const breakdownY = 172
+    const labelY = 190
+    const diceRowY = 212
+    const rerollY = 232
 
-    this.mulPreviewTxt = this.add
-      .text(380, previewY, '×1', {
-        fontSize: '12px', color: '#ffdd66', fontFamily: FONT, fontStyle: 'bold', ...STROKE,
-      }).setOrigin(0.5)
+    this.dmgPreviewTxt = addPixelText(this, ATK_X, statY, 'DMG 0', {
+      fontSize: '16px', color: '#ff9999',
+    }).setOrigin(0.5, 0)
 
-    this.atkComboTxt = this.add
-      .text(100, comboY, '', {
-        fontSize: '8px', color: '#ffcc66', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.defPreviewTxt = addPixelText(this, DEF_X, statY, 'DEF 0', {
+      fontSize: '16px', color: '#99ccff',
+    }).setOrigin(0.5, 0)
 
-    this.defComboTxt = this.add
-      .text(240, comboY, '', {
-        fontSize: '8px', color: '#ffcc66', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.mulPreviewTxt = addPixelText(this, MUL_X, statY, 'x1', {
+      fontSize: '16px', color: '#ddcc66',
+    }).setOrigin(0.5, 0)
 
-    // ── ATK ──
-    this.atkLabel = this.add
-      .text(100, baseY - 8, 'ATK x4', {
-        fontSize: '9px', color: '#eeeeee', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.atkComboTxt = addPixelText(this, ATK_X, breakdownY, '', {
+      fontSize: '8px', color: '#aa9944',
+    }).setOrigin(0.5, 0)
 
-    this.atkDice = this.createDiceRow(100, diceRowY, 4)
+    this.defComboTxt = addPixelText(this, DEF_X, breakdownY, '', {
+      fontSize: '8px', color: '#aa9944',
+    }).setOrigin(0.5, 0)
+
+    const atkCount = this.state.diceLoadout.atk
+    const defCount = this.state.diceLoadout.def
+
+    addPixelText(this, ATK_X, labelY, 'ATK', {
+      fontSize: '8px', color: '#bbbbbb',
+    }).setOrigin(0.5, 0)
+
+    this.atkDice = this.createDiceRow(ATK_X, diceRowY, atkCount)
     this.atkDice.forEach(d => {
       d.onReroll = () => this.rerollSingleDie(d, 'atk')
     })
 
-    this.atkRerollTxt = this.add
-      .text(100, rerollBtnY, '[R]', {
-        fontSize: '8px', color: '#cccccc', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.atkRerollTxt = addPixelText(this, ATK_X, rerollY, `[R] x${this.rerolls.atk}`, {
+      fontSize: '8px', color: '#888888',
+    }).setOrigin(0.5, 0)
 
     this.atkRerollBtn = this.add
-      .zone(100, rerollBtnY, 24, 12)
+      .zone(ATK_X, rerollY + 4, 28, 14)
       .setInteractive({ useHandCursor: true })
-
     this.atkRerollBtn.on('pointerdown', () => this.rerollGroup('atk'))
 
-    // ── DEF ──
-    this.defLabel = this.add
-      .text(240, baseY - 8, 'DEF x3', {
-        fontSize: '9px', color: '#eeeeee', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    addPixelText(this, DEF_X, labelY, 'DEF', {
+      fontSize: '8px', color: '#bbbbbb',
+    }).setOrigin(0.5, 0)
 
-    this.defDice = this.createDiceRow(240, diceRowY, 3)
+    this.defDice = this.createDiceRow(DEF_X, diceRowY, defCount)
     this.defDice.forEach(d => {
       d.onReroll = () => this.rerollSingleDie(d, 'def')
     })
 
-    this.defRerollTxt = this.add
-      .text(240, rerollBtnY, '[R]', {
-        fontSize: '8px', color: '#cccccc', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.defRerollTxt = addPixelText(this, DEF_X, rerollY, `[R] x${this.rerolls.def}`, {
+      fontSize: '8px', color: '#888888',
+    }).setOrigin(0.5, 0)
 
     this.defRerollBtn = this.add
-      .zone(240, rerollBtnY, 24, 12)
+      .zone(DEF_X, rerollY + 4, 28, 14)
       .setInteractive({ useHandCursor: true })
-
     this.defRerollBtn.on('pointerdown', () => this.rerollGroup('def'))
 
-    // ── MUL ──
-    this.mulLabel = this.add
-      .text(380, baseY - 8, 'MUL x1', {
-        fontSize: '9px', color: '#ffdd66', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    addPixelText(this, MUL_X, labelY, 'MUL', {
+      fontSize: '8px', color: '#ddcc66',
+    }).setOrigin(0.5, 0)
 
-    this.mulDice = this.createDiceRow(380, diceRowY, 1)[0]
+    this.mulDice = this.createDiceRow(MUL_X, diceRowY, 1)[0]
     this.mulDice.onReroll = () => this.rerollSingleDie(this.mulDice, 'mul')
 
-    this.mulRerollTxt = this.add
-      .text(380, rerollBtnY, '[R]', {
-        fontSize: '8px', color: '#cccccc', fontFamily: FONT, ...STROKE,
-      }).setOrigin(0.5)
+    this.mulRerollTxt = addPixelText(this, MUL_X, rerollY, `[R] x${this.rerolls.mul}`, {
+      fontSize: '8px', color: '#888888',
+    }).setOrigin(0.5, 0)
 
     this.mulRerollBtn = this.add
-      .zone(380, rerollBtnY, 24, 12)
+      .zone(MUL_X, rerollY + 4, 28, 14)
       .setInteractive({ useHandCursor: true })
-
     this.mulRerollBtn.on('pointerdown', () => this.rerollGroup('mul'))
   }
 
@@ -420,29 +456,32 @@ export class CombatScene extends Phaser.Scene {
     const defVals = this.defDice.map(d => d.value)
     const mulVal = this.mulDice.value
 
+    const atk = CombatEngine.computePower(atkVals)
+    const defTotal = CombatEngine.heroDefTotal(defVals, this.state)
+    const def = CombatEngine.computePower(defVals)
+    const enemyDef = this.enemy.totalDefense
+    const rawDamage = Math.max(1, atk.total - enemyDef)
+    const finalDamage = rawDamage * mulVal + (this.state.passives.includes('heavy_hit') ? 2 : 0)
+
     const atkSum = atkVals.reduce((a, b) => a + b, 0)
     const defSum = defVals.reduce((a, b) => a + b, 0)
-    const atk = CombatEngine.computePower(atkVals)
-    const def = CombatEngine.computePower(defVals)
-    const enemyDef = this.enemy.defense
-    const rawDamage = Math.max(1, atk.total - enemyDef)
-    const finalDamage = rawDamage * mulVal
 
     this.dmgPreviewTxt.setText(`DMG ${finalDamage}`)
-    this.defPreviewTxt.setText(`DEF ${def.total}`)
-    this.mulPreviewTxt.setText(`×${mulVal}`)
+    this.defPreviewTxt.setText(`DEF ${defTotal}`)
+    this.mulPreviewTxt.setText(`x${mulVal}`)
 
-    // Desglose: suma + bonus iguales − def enemigo [= raw] (× mul si aplica)
+    // Desglose: suma + combo - def [= raw] (x mul)
     const atkParts = [`${atkSum}`]
     if (atk.combo > 0) atkParts.push(`+${atk.combo}`)
-    if (enemyDef > 0) atkParts.push(`−${enemyDef}`)
+    if (enemyDef > 0) atkParts.push(`-${enemyDef}`)
     let atkBreakdown = atkParts.join('')
-    if (mulVal > 1) atkBreakdown = `(${atkBreakdown})×${mulVal}`
+    if (mulVal > 1) atkBreakdown = `(${atkBreakdown}) x${mulVal}`
     this.atkComboTxt.setText(atkBreakdown)
 
     const defParts = [`${defSum}`]
     if (def.combo > 0) defParts.push(`+${def.combo}`)
-    this.defComboTxt.setText(def.combo > 0 ? defParts.join('') : '')
+    if (this.state.passives.includes('iron_skin')) defParts.push('+2')
+    this.defComboTxt.setText(defParts.length > 1 ? defParts.join('') : '')
   }
 
   private highlightCombos(dice: DieSprite[]) {
@@ -467,13 +506,11 @@ export class CombatScene extends Phaser.Scene {
 
   private updateRerollLabels() {
     const update = (
-      label: Phaser.GameObjects.Text,
       txt: Phaser.GameObjects.Text,
       btn: Phaser.GameObjects.Zone,
-      key: string,
       count: number,
     ) => {
-      label.setText(`${key} x${count}`)
+      txt.setText(`[R] x${count}`)
       if (count <= 0) {
         txt.setColor('#555555')
         btn.disableInteractive()
@@ -483,9 +520,9 @@ export class CombatScene extends Phaser.Scene {
       }
     }
 
-    update(this.atkLabel, this.atkRerollTxt, this.atkRerollBtn, 'ATK', this.rerolls.atk)
-    update(this.defLabel, this.defRerollTxt, this.defRerollBtn, 'DEF', this.rerolls.def)
-    update(this.mulLabel, this.mulRerollTxt, this.mulRerollBtn, 'MUL', this.rerolls.mul)
+    update(this.atkRerollTxt, this.atkRerollBtn, this.rerolls.atk)
+    update(this.defRerollTxt, this.defRerollBtn, this.rerolls.def)
+    update(this.mulRerollTxt, this.mulRerollBtn, this.rerolls.mul)
 
     this.setDiceInteractive('atk', this.rerolls.atk > 0 && !this.attacking)
     this.setDiceInteractive('def', this.rerolls.def > 0 && !this.attacking)
@@ -519,26 +556,32 @@ export class CombatScene extends Phaser.Scene {
     defVals: number[],
     mulVal: number,
   ) {
-    const result = CombatEngine.resolve(atkVals, defVals, mulVal, this.enemy)
+    const result = CombatEngine.resolve(atkVals, defVals, mulVal, this.enemy, this.state)
     this.heroDefBar.setValue(result.defTotal)
     this.defPreviewTxt.setText(`DEF ${result.defTotal}`)
-    this.dmgPreviewTxt.setText(`DMG ${result.finalDamage}`)
+    this.enemyDefBar.setValue(this.enemy.totalDefense)
 
-    const enemyX = this.cameras.main.width - 60
+    const enemyX = this.cameras.main.width - ENEMY_X_OFFSET
     const heroX = 60
+    const floatY = 100
 
-    // ── Phase 1: Hero → Enemy ──────────────────────────────
-
-    if (result.atkCombo > 0) {
-      DamageNumbers.show(this, enemyX, 55, result.atkCombo, '#ffaa00')
+    if (result.phaseBlocked) {
+      addPixelText(this, enemyX, floatY, 'FASE', {
+        fontSize: '16px', color: '#aa88ff',
+      }).setOrigin(0.5).setDepth(50)
+    } else {
+      if (result.atkCombo > 0) {
+        DamageNumbers.show(this, enemyX, floatY - 10, result.atkCombo, '#ffaa00')
+      }
+      DamageNumbers.show(this, enemyX, floatY + 4, result.finalDamage, '#ff4444')
+      this.tweens.add({
+        targets: this.enemyGfx,
+        alpha: 0.3, yoyo: true, duration: 80, repeat: 2,
+      })
+      this.shakeTarget(this.enemyGfx)
     }
-    DamageNumbers.show(this, enemyX, 70, result.finalDamage, '#ff4444')
 
-    this.tweens.add({
-      targets: this.enemyGfx,
-      alpha: 0.3, yoyo: true, duration: 80, repeat: 2,
-    })
-    this.shakeTarget(this.enemyGfx)
+    this.dmgPreviewTxt.setText(`DMG ${result.finalDamage}`)
     this.enemyHpBar.setValue(this.enemy.hp)
 
     if (result.killed) {
@@ -546,31 +589,27 @@ export class CombatScene extends Phaser.Scene {
       return
     }
 
-    // ── Phase 2: Enemy → Hero (sequential) ─────────────────
-
     this.time.delayedCall(700, () => {
       const eResult = CombatEngine.enemyAttack(
         this.state.floor,
         result.defTotal,
+        this.enemy,
       )
 
-      // enemy damage number on hero
       DamageNumbers.show(
         this,
         heroX,
-        70,
+        floatY + 4,
         eResult.damage,
         eResult.blocked >= eResult.damage ? '#88aacc' : '#ff8844',
       )
 
-      // flash + shake hero
       this.tweens.add({
         targets: this.heroGfx,
         alpha: 0.3, yoyo: true, duration: 80, repeat: 2,
       })
       this.shakeTarget(this.heroGfx)
 
-      // apply damage to hero
       const remainingDef = Math.max(0, result.defTotal - eResult.blocked)
       this.heroDefBar.setValue(remainingDef)
       this.defPreviewTxt.setText(`DEF ${remainingDef}`)
@@ -578,67 +617,107 @@ export class CombatScene extends Phaser.Scene {
       if (eResult.overflow > 0) {
         this.state.hp = Math.max(0, this.state.hp - eResult.overflow)
         this.heroHpBar.setValue(this.state.hp)
+        if (this.enemy.skill === 'steal') {
+          const stolen = CombatEngine.applySteal(this.state, eResult.overflow)
+          if (stolen > 0) {
+            addPixelText(this, heroX, floatY - 8, `-${stolen}g`, {
+              fontSize: '8px', color: '#ffcc44',
+            }).setOrigin(0.5).setDepth(50)
+          }
+        }
+        trySecondWind(this.state)
+        this.heroHpBar.setValue(this.state.hp)
       }
 
       this.time.delayedCall(500, () => {
         if (this.state.hp <= 0) {
           this.onHeroKilled()
         } else {
-          this.enableAttack()
+          this.resetPlayerTurn()
         }
       })
     })
   }
 
   private onHeroKilled() {
-    this.add
-      .text(this.cameras.main.width / 2, 130, 'DERROTADO', {
-        fontSize: '14px',
-        color: '#ff6666',
-        fontFamily: FONT,
-        fontStyle: 'bold',
-        ...STROKE,
-      })
-      .setOrigin(0.5)
-      .setDepth(50)
-
-    this.time.delayedCall(1500, () => {
-      this.scene.start('MapScene', { runState: this.state })
+    SaveSystem.save('quicksave', this.state)
+    this.time.delayedCall(400, () => {
+      this.scene.start('GameOverScene', { runState: this.state })
     })
   }
 
   private onEnemyKilled() {
-    DamageNumbers.show(this, this.cameras.main.width - 60, 70, 0, '#ffaa00')
+    const { width } = this.cameras.main
+    const enemyRestX = width - ENEMY_X_OFFSET
 
-    this.add
-      .text(this.cameras.main.width - 60, 65, 'KO!', {
-        fontSize: '14px', color: '#ffcc44', fontFamily: FONT, fontStyle: 'bold', ...STROKE,
-      }).setOrigin(0.5).setDepth(50)
+    applyPassiveOnKill(this.state)
+    SaveSystem.save('quicksave', this.state)
 
-    this.time.delayedCall(900, () => {
-      this.state.floor += 1
-      this.enemy = Enemy.forFloor(this.state.floor)
+    const koTxt = addPixelText(this, enemyRestX, 100, 'KO!', {
+      fontSize: '16px', color: '#ffcc44',
+    }).setOrigin(0.5).setDepth(50)
 
-      this.enemyGfx.clear()
-      this.drawCharacter(
-        this.enemyGfx, this.cameras.main.width - 60, 86, 0xcc4444,
-      )
-      this.enemyNameText.setText(this.enemy.name)
-
-      this.enemyHpBar.setMax(this.enemy.maxHp)
-      this.enemyHpBar.setValue(this.enemy.hp)
-      this.enemyDefBar.setMax(this.enemy.defense)
-      this.enemyDefBar.setValue(this.enemy.defense)
-
-      this.heroDefBar.setValue(0)
-
-      // reset rerolls & pre-roll dice
-      this.rerolls = { atk: 4, def: 3, mul: 1 }
-      this.updateRerollLabels()
-      this.preRollAll()
-
-      this.enableAttack()
+    this.tweens.add({
+      targets: [this.enemyGfx, this.enemyNameText, koTxt],
+      alpha: 0,
+      x: '+=24',
+      duration: 320,
+      ease: 'Cubic.easeIn',
+      onComplete: () => {
+        koTxt.destroy()
+        this.wave.shift()
+        if (this.wave.length === 0) {
+          this.scene.start('RewardScene', { runState: this.state })
+          return
+        }
+        this.enemy = this.wave[0]
+        this.spawnNextEnemy()
+      },
     })
+  }
+
+  private spawnNextEnemy() {
+    const { width } = this.cameras.main
+    const enemyX = width - ENEMY_X_OFFSET
+    const baseY = GROUND_Y - 14
+
+    this.enemyGfx.clear()
+    this.enemyGfx.setAlpha(1)
+    this.enemyGfx.setDepth(2)
+    this.enemyGfx.x = 40
+    this.enemyGfx.y = 0
+    this.drawCharacter(this.enemyGfx, enemyX, baseY, 0xcc4444)
+
+    this.enemyNameText.setText(this.enemy.name)
+    this.enemyNameText.setAlpha(1)
+    this.enemyNameText.setPosition(enemyX + 40, GROUND_Y - 22)
+
+    this.bindEnemyBars()
+    this.redrawEnemyQueue()
+    this.updatePreviews()
+
+    this.tweens.add({
+      targets: this.enemyGfx,
+      x: 0,
+      duration: 280,
+      ease: 'Cubic.easeOut',
+    })
+    this.tweens.add({
+      targets: this.enemyNameText,
+      x: enemyX,
+      duration: 280,
+      ease: 'Cubic.easeOut',
+      onComplete: () => this.resetPlayerTurn(),
+    })
+  }
+
+  private resetPlayerTurn() {
+    this.attacking = false
+    this.rerolls = { ...effectiveRerollMax(this.state) }
+    this.preRollAll()
+    this.heroDefBar.setValue(0)
+    this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.enableAttack()
   }
 
   private enableAttack() {

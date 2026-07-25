@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { createDebugState } from '../debug'
+import { addPixelText } from '../ui/pixelText'
 
 const SCENE_KEYS = [
   'BootScene',
@@ -37,22 +37,20 @@ export class MenuScene extends Phaser.Scene {
     const startY = 110
     const spacing = 22
 
-    this.add.text(cx, 36, 'DICE & DEPTHS', {
-      fontSize: '18px',
+    addPixelText(this, cx, 36, 'DICE & DEPTHS', {
+      fontSize: '16px',
       color: '#ffffff',
-      fontFamily: 'monospace',
     }).setOrigin(0.5)
 
     const entries: ReadonlyArray<readonly [string, string]> = [
-      ['Descender', 'MapScene'],
+      ['Descender', 'CharacterSelectScene'],
       ['Opciones', 'EventScene'],
     ]
 
     this.items = entries.map(([label, sceneKey], i) => {
-      const text = this.add.text(cx, startY + i * spacing, label, {
-        fontSize: '10px',
+      const text = addPixelText(this, cx, startY + i * spacing, label, {
+        fontSize: '16px',
         color: '#888888',
-        fontFamily: 'monospace',
       }).setOrigin(0.5).setInteractive({ useHandCursor: true })
 
       text.on('pointerover', () => this.select(i))
@@ -60,18 +58,16 @@ export class MenuScene extends Phaser.Scene {
       return { label, sceneKey, text }
     })
 
-    this.cursor = this.add.text(cx - 80, startY, '>', {
-      fontSize: '10px',
+    this.cursor = addPixelText(this, cx - 80, startY, '>', {
+      fontSize: '16px',
       color: '#ffffff',
-      fontFamily: 'monospace',
     }).setOrigin(0.5)
 
     this.select(0)
 
-    this.add.text(cx, 250, 'arrow keys / enter | 1-9: debug scenes', {
-      fontSize: '6px',
-      color: '#444444',
-      fontFamily: 'monospace',
+    addPixelText(this, cx, 250, 'flechas / enter', {
+      fontSize: '8px',
+      color: '#666666',
     }).setOrigin(0.5)
 
     this.input.keyboard!.on('keydown-UP', () => this.move(-1))
@@ -114,8 +110,6 @@ export class MenuScene extends Phaser.Scene {
     this.inputLocked = true
     const item = this.items[index]
     if (!item) return
-    const data =
-      item.sceneKey === 'MapScene' ? { runState: createDebugState(1) } : undefined
-    this.time.delayedCall(150, () => this.scene.start(item.sceneKey, data))
+    this.time.delayedCall(150, () => this.scene.start(item.sceneKey))
   }
 }

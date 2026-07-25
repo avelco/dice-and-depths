@@ -24,7 +24,7 @@ export class PreloadScene extends Phaser.Scene {
     this.add.text(width / 2, y - 16, 'LOADING...', {
       fontSize: '8px',
       color: '#aaaaaa',
-      fontFamily: 'monospace',
+      fontFamily: '"Silkscreen"',
     }).setOrigin(0.5).setDepth(10)
 
     const fill = (pct: number) => {

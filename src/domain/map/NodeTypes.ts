@@ -1,1 +1,3 @@
-export type NodeType = 'combat' | 'elite' | 'event' | 'shop' | 'forge' | 'boss' | 'rest'
+export type NodeType = 'combat' | 'elite' | 'event' | 'shop' | 'rest' | 'boss'
+
+export type MapNodeKind = 'start' | NodeType
