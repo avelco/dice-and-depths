@@ -2,14 +2,10 @@ import type { MapNodeKind } from '../map/NodeTypes'
 
 export interface DiceLoadout {
   atk: number
-  def: number
-  mul: number
 }
 
 export interface RerollMax {
   atk: number
-  def: number
-  mul: number
 }
 
 export interface MapNodeSnapshot {
@@ -35,14 +31,15 @@ export type RewardTier = 'normal' | 'elite' | 'boss'
 
 export class RunState {
   floor = 1
-  gold = 0
+  /** Run-only currency (almas). Lost when the run ends. */
+  coins = 0
   maxHp = 30
   hp = 30
   characterName = 'Guerrero'
   seed = 0
   passives: string[] = []
-  diceLoadout: DiceLoadout = { atk: 4, def: 3, mul: 1 }
-  rerollMax: RerollMax = { atk: 4, def: 3, mul: 1 }
+  diceLoadout: DiceLoadout = { atk: 4 }
+  rerollMax: RerollMax = { atk: 4 }
   currentNodeId: number | null = null
   map: MapSnapshot | null = null
   secondWindUsedThisFloor = false
@@ -50,15 +47,20 @@ export class RunState {
   pendingRewardTier: RewardTier = 'normal'
   lastDustEarned = 0
 
+  /** Flat DEF from meta gear loadout (frozen at run start). */
+  bonusDefFlat = 0
+  /** Flat DMG from meta gear/runes (frozen at run start). */
+  bonusDmgFlat = 0
+
   /** @deprecated debug header only */
-  dice = 8
+  dice = 4
   /** @deprecated debug header only */
-  rerolls = 8
+  rerolls = 4
 }
 
 export function syncRunStateDerived(state: RunState) {
-  state.dice = state.diceLoadout.atk + state.diceLoadout.def + state.diceLoadout.mul
-  state.rerolls = state.rerollMax.atk + state.rerollMax.def + state.rerollMax.mul
+  state.dice = state.diceLoadout.atk
+  state.rerolls = state.rerollMax.atk
 }
 
 export function createNewRun(characterName: string, seed = Date.now()): RunState {

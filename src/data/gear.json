@@ -1,0 +1,72 @@
+[
+  {
+    "id": "hat_cloth",
+    "name": "Gorro de tela",
+    "slot": "hat",
+    "rarity": "common",
+    "mods": [{ "stat": "maxHp", "value": 3 }]
+  },
+  {
+    "id": "hat_iron",
+    "name": "Casco de hierro",
+    "slot": "hat",
+    "rarity": "rare",
+    "mods": [{ "stat": "maxHp", "value": 6 }]
+  },
+  {
+    "id": "cape_rag",
+    "name": "Capa raída",
+    "slot": "cape",
+    "rarity": "common",
+    "mods": [{ "stat": "defFlat", "value": 1 }]
+  },
+  {
+    "id": "cape_guard",
+    "name": "Capa de guardia",
+    "slot": "cape",
+    "rarity": "rare",
+    "mods": [{ "stat": "defFlat", "value": 3 }]
+  },
+  {
+    "id": "belt_rope",
+    "name": "Cinturón de cuerda",
+    "slot": "belt",
+    "rarity": "common",
+    "mods": [{ "stat": "maxHp", "value": 2 }]
+  },
+  {
+    "id": "belt_plated",
+    "name": "Cinturón plateado",
+    "slot": "belt",
+    "rarity": "rare",
+    "mods": [{ "stat": "maxHp", "value": 5 }]
+  },
+  {
+    "id": "ring_copper",
+    "name": "Anillo de cobre",
+    "slot": "ring",
+    "rarity": "common",
+    "mods": [{ "stat": "dmgFlat", "value": 1 }]
+  },
+  {
+    "id": "ring_ruby",
+    "name": "Anillo rubí",
+    "slot": "ring",
+    "rarity": "rare",
+    "mods": [{ "stat": "dmgFlat", "value": 2 }]
+  },
+  {
+    "id": "boots_worn",
+    "name": "Botas gastadas",
+    "slot": "boots",
+    "rarity": "common",
+    "mods": [{ "stat": "startGold", "value": 5 }]
+  },
+  {
+    "id": "boots_merchant",
+    "name": "Botas de mercader",
+    "slot": "boots",
+    "rarity": "rare",
+    "mods": [{ "stat": "startGold", "value": 15 }]
+  }
+]

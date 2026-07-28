@@ -1,4 +1,4 @@
-import { RunState, syncRunStateDerived, type MapSnapshot } from '../domain/progression/RunState'
+import { RunState, syncRunStateDerived, type MapSnapshot, type DiceLoadout, type RerollMax } from '../domain/progression/RunState'
 
 const PREFIX = 'dnd_save_'
 
@@ -10,10 +10,24 @@ export interface SaveSlot {
   characterName: string
 }
 
+function normalizeLoadout(raw: unknown): DiceLoadout {
+  const d = (raw ?? {}) as Partial<DiceLoadout>
+  return {
+    atk: typeof d.atk === 'number' ? d.atk : 4,
+  }
+}
+
+function normalizeRerolls(raw: unknown): RerollMax {
+  const d = (raw ?? {}) as Partial<RerollMax>
+  return {
+    atk: typeof d.atk === 'number' ? d.atk : 4,
+  }
+}
+
 function serialize(state: RunState) {
   return {
     floor: state.floor,
-    gold: state.gold,
+    coins: state.coins,
     maxHp: state.maxHp,
     hp: state.hp,
     characterName: state.characterName,
@@ -26,27 +40,37 @@ function serialize(state: RunState) {
     secondWindUsedThisFloor: state.secondWindUsedThisFloor,
     pendingNodeKind: state.pendingNodeKind,
     pendingRewardTier: state.pendingRewardTier,
+    bonusDefFlat: state.bonusDefFlat,
+    bonusDmgFlat: state.bonusDmgFlat,
     savedAt: Date.now(),
-    version: 2,
+    version: 4,
   }
 }
 
 function deserialize(data: Record<string, unknown>): RunState {
   const state = new RunState()
   state.floor = (data.floor as number) ?? 1
-  state.gold = (data.gold as number) ?? 0
+  // Migrate legacy run gold → coins
+  state.coins =
+    typeof data.coins === 'number'
+      ? data.coins
+      : typeof data.gold === 'number'
+        ? data.gold
+        : 0
   state.maxHp = (data.maxHp as number) ?? 30
   state.hp = (data.hp as number) ?? state.maxHp
   state.characterName = (data.characterName as string) ?? 'Guerrero'
   state.seed = (data.seed as number) ?? 0
   state.passives = (data.passives as string[]) ?? []
-  state.diceLoadout = (data.diceLoadout as RunState['diceLoadout']) ?? { atk: 4, def: 3, mul: 1 }
-  state.rerollMax = (data.rerollMax as RunState['rerollMax']) ?? { atk: 4, def: 3, mul: 1 }
+  state.diceLoadout = normalizeLoadout(data.diceLoadout)
+  state.rerollMax = normalizeRerolls(data.rerollMax)
   state.currentNodeId = (data.currentNodeId as number | null) ?? null
   state.map = (data.map as MapSnapshot | null) ?? null
   state.secondWindUsedThisFloor = !!(data.secondWindUsedThisFloor)
   state.pendingNodeKind = (data.pendingNodeKind as RunState['pendingNodeKind']) ?? null
   state.pendingRewardTier = (data.pendingRewardTier as RunState['pendingRewardTier']) ?? 'normal'
+  state.bonusDefFlat = (data.bonusDefFlat as number) ?? 0
+  state.bonusDmgFlat = (data.bonusDmgFlat as number) ?? 0
   syncRunStateDerived(state)
   return state
 }

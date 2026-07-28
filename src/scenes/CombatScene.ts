@@ -6,11 +6,17 @@ import { DieSprite } from '../ui/DieSprite'
 import { DamageNumbers } from '../ui/DamageNumbers'
 import { addPixelText } from '../ui/pixelText'
 import { Enemy } from '../domain/enemies/Enemy'
+import { EnemyAI } from '../domain/enemies/EnemyAI'
 import { CombatEngine } from '../domain/combat/CombatEngine'
 import type { RunState } from '../domain/progression/RunState'
+import { AudioSystem } from '../systems/AudioSystem'
+import { bindSceneKeys } from '../systems/bindSceneKeys'
+import { charName, enemyName, t } from '../i18n/I18n'
+import { enableTouchTarget, minZoneSize } from '../ui/touchTarget'
+import { preferReducedMotion } from '../systems/Device'
 
-const DIE_SIZE = 14
-const DIE_GAP = 4
+const DIE_SIZE = 16
+const DIE_GAP = 5
 const DEF_COLOR = 0x4488cc
 const DEF_MAX = 18
 /** Path band Y — kept above HP bars (sectY ≈ 110). */
@@ -19,7 +25,7 @@ const ENEMY_X_OFFSET = 60
 const QUEUE_STEP_X = 10
 const QUEUE_STEP_Y = -7
 
-type DiceGroup = 'atk' | 'def' | 'mul'
+type DiceGroup = 'atk'
 
 export class CombatScene extends Phaser.Scene {
   private state!: RunState
@@ -32,15 +38,14 @@ export class CombatScene extends Phaser.Scene {
   private enemyDefBar!: HealthBar
 
   private atkDice: DieSprite[] = []
-  private defDice: DieSprite[] = []
-  private mulDice!: DieSprite
+  private enemyAtkDice: DieSprite[] = []
 
   private atkRerollBtn!: Phaser.GameObjects.Zone
-  private defRerollBtn!: Phaser.GameObjects.Zone
-  private mulRerollBtn!: Phaser.GameObjects.Zone
   private atkRerollTxt!: Phaser.GameObjects.Text
-  private defRerollTxt!: Phaser.GameObjects.Text
-  private mulRerollTxt!: Phaser.GameObjects.Text
+  private enemyRerollTxt!: Phaser.GameObjects.Text
+  private enemyDmgTxt!: Phaser.GameObjects.Text
+  private enemyComboTxt!: Phaser.GameObjects.Text
+  private enemyLabelTxt!: Phaser.GameObjects.Text
 
   private attackBtnBg!: Phaser.GameObjects.Graphics
   private attackBtnTxt!: Phaser.GameObjects.Text
@@ -50,7 +55,6 @@ export class CombatScene extends Phaser.Scene {
   private defPreviewTxt!: Phaser.GameObjects.Text
   private atkComboTxt!: Phaser.GameObjects.Text
   private defComboTxt!: Phaser.GameObjects.Text
-  private mulPreviewTxt!: Phaser.GameObjects.Text
 
   private heroGfx!: Phaser.GameObjects.Graphics
   private enemyGfx!: Phaser.GameObjects.Graphics
@@ -64,7 +68,14 @@ export class CombatScene extends Phaser.Scene {
   private btnW = 0
   private btnH = 0
 
-  private rerolls = { atk: 4, def: 3, mul: 1 }
+  private rerolls = { atk: 4 }
+  private enemyRerollsLeft = 0
+  private enemyDiceX = 390
+  private diceRowY = 214
+  private pendingHeroDef = 0
+  private rerollHintShown = false
+  private rerollHintTxt: Phaser.GameObjects.Text | null = null
+  private rerollHintTimer: Phaser.Time.TimerEvent | null = null
 
   constructor() {
     super('CombatScene')
@@ -72,10 +83,14 @@ export class CombatScene extends Phaser.Scene {
 
   init() {
     this.atkDice = []
-    this.defDice = []
+    this.enemyAtkDice = []
     this.wave = []
     this.queueGfx = []
     this.attacking = false
+    this.pendingHeroDef = 0
+    this.rerollHintShown = false
+    this.rerollHintTxt = null
+    this.rerollHintTimer = null
     this.shakeTimers.clear()
     this.children.removeAll(true)
   }
@@ -98,16 +113,22 @@ export class CombatScene extends Phaser.Scene {
     this.drawSection1()
     this.drawSection2()
     this.drawSection3()
-    this.preRollAll()
+    this.preRollAll(() => this.enableAttack())
 
-    addPixelText(this, width / 2, height - 8, 'ESC: mapa', {
-        fontSize: '8px', color: '#aaaaaa', 
-      })
-      .setOrigin(0.5).setDepth(10)
-
-    this.input.keyboard!.on('keydown-ESC', () =>
+    const escTxt = addPixelText(this, width / 2, height - 8, t('combat.esc'), {
+      fontSize: '8px', color: '#aaaaaa',
+    }).setOrigin(0.5).setDepth(10)
+    enableTouchTarget(escTxt)
+    escTxt.on('pointerover', () => escTxt.setColor('#ffffff'))
+    escTxt.on('pointerout', () => escTxt.setColor('#aaaaaa'))
+    escTxt.on('pointerdown', () =>
       this.scene.start('MapScene', { runState: this.state }),
     )
+
+    bindSceneKeys(this, {
+      'keydown-ESC': () =>
+        this.scene.start('MapScene', { runState: this.state }),
+    })
   }
 
   // ── Section 1: Camino ─────────────────────────────────────
@@ -137,7 +158,7 @@ export class CombatScene extends Phaser.Scene {
 
     this.heroGfx = this.add.graphics()
     this.drawCharacter(this.heroGfx, 60, groundY - 14, 0x4488cc)
-    addPixelText(this, 60, groundY - 22, this.state.characterName, {
+    addPixelText(this, 60, groundY - 22, charName(this.state.characterName), {
       fontSize: '8px', color: '#cceeff',
     }).setOrigin(0.5)
 
@@ -146,7 +167,7 @@ export class CombatScene extends Phaser.Scene {
     this.enemyGfx = this.add.graphics()
     this.enemyGfx.setDepth(2)
     this.drawCharacter(this.enemyGfx, enemyX, groundY - 14, 0xcc4444)
-    this.enemyNameText = addPixelText(this, enemyX, groundY - 22, this.enemy.name, {
+    this.enemyNameText = addPixelText(this, enemyX, groundY - 22, enemyName(this.enemy.templateId), {
       fontSize: '8px', color: '#ffcccc',
     }).setOrigin(0.5).setDepth(2)
   }
@@ -182,7 +203,7 @@ export class CombatScene extends Phaser.Scene {
     this.enemyHpBar.setValue(this.enemy.hp)
     this.enemyDefBar.setMax(Math.max(this.enemy.defense + 4, 8))
     this.enemyDefBar.setValue(this.enemy.totalDefense)
-    this.enemyNameText.setText(this.enemy.name)
+    this.enemyNameText.setText(enemyName(this.enemy.templateId))
   }
 
   private drawCharacter(
@@ -240,12 +261,13 @@ export class CombatScene extends Phaser.Scene {
     this.attackBtnBg = this.add.graphics()
     this.redrawAttackBtnDefault()
 
-    this.attackBtnTxt = addPixelText(this, cx, this.btnY + this.btnH / 2, 'ATACAR', {
+    this.attackBtnTxt = addPixelText(this, cx, this.btnY + this.btnH / 2, t('combat.attack'), {
       fontSize: '8px', color: '#ffffff',
     }).setOrigin(0.5)
 
+    const atkZone = minZoneSize(this.btnW, this.btnH, 28)
     this.attackBtnZone = this.add
-      .zone(cx, this.btnY + this.btnH / 2, this.btnW, this.btnH)
+      .zone(cx, this.btnY + this.btnH / 2, atkZone.w, atkZone.h)
       .setInteractive({ useHandCursor: true })
 
     this.attackBtnZone.on('pointerover', () => this.redrawAttackBtnHover())
@@ -283,91 +305,126 @@ export class CombatScene extends Phaser.Scene {
     panel.lineStyle(1, 0x333344, 1)
     panel.strokeRoundedRect(8, panelY, width - 16, panelH, 4)
 
-    const ATK_X = 100
-    const DEF_X = 240
-    const MUL_X = 380
+    // Player dice left, enemy right — DEF comes from ATK combos
+    const PLAYER_X = 140
+    const ENEMY_X = 380
+    this.enemyDiceX = ENEMY_X
 
-    // Rows with clear gaps — Silkscreen needs ~14px between lines
     const statY = 154
     const breakdownY = 172
     const labelY = 190
-    const diceRowY = 212
-    const rerollY = 232
+    const diceRowY = 214
+    const rerollY = 236
+    this.diceRowY = diceRowY
 
-    this.dmgPreviewTxt = addPixelText(this, ATK_X, statY, 'DMG 0', {
+    this.dmgPreviewTxt = addPixelText(this, PLAYER_X - 40, statY, 'DMG 0', {
       fontSize: '16px', color: '#ff9999',
     }).setOrigin(0.5, 0)
 
-    this.defPreviewTxt = addPixelText(this, DEF_X, statY, 'DEF 0', {
+    this.defPreviewTxt = addPixelText(this, PLAYER_X + 40, statY, 'DEF 0', {
       fontSize: '16px', color: '#99ccff',
     }).setOrigin(0.5, 0)
 
-    this.mulPreviewTxt = addPixelText(this, MUL_X, statY, 'x1', {
-      fontSize: '16px', color: '#ddcc66',
+    this.enemyDmgTxt = addPixelText(this, ENEMY_X, statY, 'DMG -', {
+      fontSize: '16px', color: '#ff8866',
     }).setOrigin(0.5, 0)
 
-    this.atkComboTxt = addPixelText(this, ATK_X, breakdownY, '', {
+    this.atkComboTxt = addPixelText(this, PLAYER_X - 40, breakdownY, '', {
       fontSize: '8px', color: '#aa9944',
     }).setOrigin(0.5, 0)
 
-    this.defComboTxt = addPixelText(this, DEF_X, breakdownY, '', {
-      fontSize: '8px', color: '#aa9944',
+    this.defComboTxt = addPixelText(this, PLAYER_X + 40, breakdownY, '', {
+      fontSize: '8px', color: '#8899bb',
+    }).setOrigin(0.5, 0)
+
+    this.enemyComboTxt = addPixelText(this, ENEMY_X, breakdownY, '', {
+      fontSize: '8px', color: '#aa6644',
     }).setOrigin(0.5, 0)
 
     const atkCount = this.state.diceLoadout.atk
-    const defCount = this.state.diceLoadout.def
 
-    addPixelText(this, ATK_X, labelY, 'ATK', {
+    addPixelText(this, PLAYER_X, labelY, 'ATK', {
       fontSize: '8px', color: '#bbbbbb',
     }).setOrigin(0.5, 0)
 
-    this.atkDice = this.createDiceRow(ATK_X, diceRowY, atkCount)
+    this.atkDice = this.createDiceRow(PLAYER_X, diceRowY, atkCount)
     this.atkDice.forEach(d => {
       d.onReroll = () => this.rerollSingleDie(d, 'atk')
     })
 
-    this.atkRerollTxt = addPixelText(this, ATK_X, rerollY, `[R] x${this.rerolls.atk}`, {
+    this.atkRerollTxt = addPixelText(this, PLAYER_X, rerollY, `[R] x${this.rerolls.atk}`, {
       fontSize: '8px', color: '#888888',
     }).setOrigin(0.5, 0)
 
+    const rZone = minZoneSize(40, 16, 28)
     this.atkRerollBtn = this.add
-      .zone(ATK_X, rerollY + 4, 28, 14)
+      .zone(PLAYER_X, rerollY + 4, rZone.w, rZone.h)
       .setInteractive({ useHandCursor: true })
     this.atkRerollBtn.on('pointerdown', () => this.rerollGroup('atk'))
 
-    addPixelText(this, DEF_X, labelY, 'DEF', {
-      fontSize: '8px', color: '#bbbbbb',
+    this.enemyLabelTxt = addPixelText(this, ENEMY_X, labelY, enemyName(this.enemy.templateId), {
+      fontSize: '8px', color: '#ffaa88',
     }).setOrigin(0.5, 0)
 
-    this.defDice = this.createDiceRow(DEF_X, diceRowY, defCount)
-    this.defDice.forEach(d => {
-      d.onReroll = () => this.rerollSingleDie(d, 'def')
-    })
+    this.buildEnemyDice()
+    this.enemyRerollsLeft = this.enemy.rerollMax
+    this.enemyRerollTxt = addPixelText(
+      this, ENEMY_X, rerollY, `[R] x${this.enemyRerollsLeft}`, {
+        fontSize: '8px', color: '#886666',
+      },
+    ).setOrigin(0.5, 0)
+    this.setEnemyDiceDimmed(true)
+  }
 
-    this.defRerollTxt = addPixelText(this, DEF_X, rerollY, `[R] x${this.rerolls.def}`, {
-      fontSize: '8px', color: '#888888',
-    }).setOrigin(0.5, 0)
+  private buildEnemyDice() {
+    for (const d of this.enemyAtkDice) d.destroy()
+    this.enemyAtkDice = this.createDiceRow(
+      this.enemyDiceX,
+      this.diceRowY,
+      this.enemy.atkDiceCount,
+    )
+    for (const d of this.enemyAtkDice) {
+      d.onReroll = null
+      d.setDiceInteractive(false)
+      d.setValue(1)
+    }
+  }
 
-    this.defRerollBtn = this.add
-      .zone(DEF_X, rerollY + 4, 28, 14)
-      .setInteractive({ useHandCursor: true })
-    this.defRerollBtn.on('pointerdown', () => this.rerollGroup('def'))
+  private setEnemyDiceDimmed(dim: boolean) {
+    const a = dim ? 0.45 : 1
+    for (const d of this.enemyAtkDice) d.setAlpha(a)
+    this.enemyDmgTxt.setAlpha(a)
+    this.enemyComboTxt.setAlpha(a)
+    this.enemyLabelTxt.setAlpha(dim ? 0.55 : 1)
+    this.enemyRerollTxt.setAlpha(dim ? 0.55 : 1)
+    if (dim) {
+      this.enemyDmgTxt.setText('DMG -')
+      this.enemyComboTxt.setText('')
+      this.enemyRerollTxt.setColor('#886666')
+    } else {
+      this.enemyRerollTxt.setColor('#ffccaa')
+    }
+  }
 
-    addPixelText(this, MUL_X, labelY, 'MUL', {
-      fontSize: '8px', color: '#ddcc66',
-    }).setOrigin(0.5, 0)
+  private updateEnemyPreview() {
+    const vals = this.enemyAtkDice.map(d => d.value)
+    const power = CombatEngine.computePower(vals)
+    let dmg = power.total
+    const nextTurn = this.enemy.turnCount + 1
+    const slam = this.enemy.skill === 'slam' && nextTurn % 2 === 0
+    if (slam) dmg *= 2
 
-    this.mulDice = this.createDiceRow(MUL_X, diceRowY, 1)[0]
-    this.mulDice.onReroll = () => this.rerollSingleDie(this.mulDice, 'mul')
+    this.enemyDmgTxt.setText(`DMG ${dmg}`)
+    const sum = vals.reduce((a, b) => a + b, 0)
+    const parts = [`${sum}`]
+    if (power.combo > 0) parts.push(`+${power.combo}`)
+    if (slam) parts.push('x2')
+    this.enemyComboTxt.setText(parts.length > 1 || slam ? parts.join('') : '')
+  }
 
-    this.mulRerollTxt = addPixelText(this, MUL_X, rerollY, `[R] x${this.rerolls.mul}`, {
-      fontSize: '8px', color: '#888888',
-    }).setOrigin(0.5, 0)
-
-    this.mulRerollBtn = this.add
-      .zone(MUL_X, rerollY + 4, 28, 14)
-      .setInteractive({ useHandCursor: true })
-    this.mulRerollBtn.on('pointerdown', () => this.rerollGroup('mul'))
+  private updateEnemyRerollLabel() {
+    this.enemyRerollTxt.setText(`[R] x${this.enemyRerollsLeft}`)
+    this.enemyRerollTxt.setColor(this.enemyRerollsLeft > 0 ? '#ffccaa' : '#555555')
   }
 
   private createDiceRow(cx: number, y: number, count: number): DieSprite[] {
@@ -382,10 +439,32 @@ export class CombatScene extends Phaser.Scene {
 
   // ── Reroll system ─────────────────────────────────────────
 
-  private preRollAll() {
-    const all = [...this.atkDice, ...this.defDice, this.mulDice]
-    all.forEach(d => d.setValue(Math.floor(Math.random() * 6) + 1))
-    this.updateCombos()
+  private preRollAll(onDone?: () => void) {
+    this.attacking = true
+    this.setRerollButtonsEnabled(false)
+    this.attackBtnZone?.disableInteractive()
+    this.attackBtnTxt?.setText('...')
+
+    const all = [...this.atkDice]
+    if (all.length === 0) {
+      onDone?.()
+      return
+    }
+
+    const finals = all.map(() => Math.floor(Math.random() * 6) + 1)
+    AudioSystem.play('dice')
+    let done = 0
+    all.forEach((d, i) => {
+      this.time.delayedCall(i * 35, () => {
+        d.roll(finals[i], () => {
+          done++
+          if (done >= all.length) {
+            this.updateCombos()
+            onDone?.()
+          }
+        })
+      })
+    })
   }
 
   private rerollGroup(group: DiceGroup) {
@@ -393,27 +472,19 @@ export class CombatScene extends Phaser.Scene {
     const r = this.rerolls[group]
     if (r <= 0) return
 
+    this.dismissRerollHint()
     this.rerolls[group]--
     this.updateRerollLabels()
+    AudioSystem.play('reroll')
 
-    const dice = group === 'atk' ? this.atkDice
-      : group === 'def' ? this.defDice : [this.mulDice]
-    const finalValues = dice.map(() => Math.floor(Math.random() * 6) + 1)
-
-    let ticks = 0
-    const totalTicks = 8
-    this.time.addEvent({
-      delay: 40,
-      repeat: totalTicks - 1,
-      callback: () => {
-        ticks++
-        if (ticks >= totalTicks) {
-          dice.forEach((d, i) => d.setValue(finalValues[i]))
-          this.updateCombos()
-        } else {
-          dice.forEach(d => d.setValue(Math.floor(Math.random() * 6) + 1))
-        }
-      },
+    const dice = this.atkDice
+    const finals = dice.map(() => Math.floor(Math.random() * 6) + 1)
+    let done = 0
+    dice.forEach((d, i) => {
+      d.roll(finals[i], () => {
+        done++
+        if (done >= dice.length) this.updateCombos()
+      })
     })
   }
 
@@ -421,67 +492,56 @@ export class CombatScene extends Phaser.Scene {
     if (this.attacking) return
     if (this.rerolls[group] <= 0) return
 
+    this.dismissRerollHint()
     this.rerolls[group]--
     this.updateRerollLabels()
+    AudioSystem.play('reroll')
 
     const finalValue = Math.floor(Math.random() * 6) + 1
-
-    let ticks = 0
-    const totalTicks = 8
-    this.time.addEvent({
-      delay: 40,
-      repeat: totalTicks - 1,
-      callback: () => {
-        ticks++
-        if (ticks >= totalTicks) {
-          die.setValue(finalValue)
-          this.updateCombos()
-        } else {
-          die.setValue(Math.floor(Math.random() * 6) + 1)
-        }
-      },
-    })
+    die.roll(finalValue, () => this.updateCombos())
   }
 
   private updateCombos() {
     this.highlightCombos(this.atkDice)
-    this.highlightCombos(this.defDice)
-    // mul is a single die, no combos
-    this.mulDice.setComboBorder(null)
     this.updatePreviews()
   }
 
   private updatePreviews() {
     const atkVals = this.atkDice.map(d => d.value)
-    const defVals = this.defDice.map(d => d.value)
-    const mulVal = this.mulDice.value
 
     const atk = CombatEngine.computePower(atkVals)
-    const defTotal = CombatEngine.heroDefTotal(defVals, this.state)
-    const def = CombatEngine.computePower(defVals)
+    const defInfo = CombatEngine.computeDefense(atkVals)
+    const rollDef = CombatEngine.heroDefTotal(atkVals, this.state)
+    const defTotal = this.pendingHeroDef + rollDef
     const enemyDef = this.enemy.totalDefense
     const rawDamage = Math.max(1, atk.total - enemyDef)
-    const finalDamage = rawDamage * mulVal + (this.state.passives.includes('heavy_hit') ? 2 : 0)
+    const finalDamage =
+      rawDamage +
+      (this.state.passives.includes('heavy_hit') ? 2 : 0) +
+      this.state.bonusDmgFlat
 
     const atkSum = atkVals.reduce((a, b) => a + b, 0)
-    const defSum = defVals.reduce((a, b) => a + b, 0)
 
     this.dmgPreviewTxt.setText(`DMG ${finalDamage}`)
     this.defPreviewTxt.setText(`DEF ${defTotal}`)
-    this.mulPreviewTxt.setText(`x${mulVal}`)
 
-    // Desglose: suma + combo - def [= raw] (x mul)
     const atkParts = [`${atkSum}`]
     if (atk.combo > 0) atkParts.push(`+${atk.combo}`)
     if (enemyDef > 0) atkParts.push(`-${enemyDef}`)
-    let atkBreakdown = atkParts.join('')
-    if (mulVal > 1) atkBreakdown = `(${atkBreakdown}) x${mulVal}`
-    this.atkComboTxt.setText(atkBreakdown)
+    if (this.state.bonusDmgFlat > 0) atkParts.push(`+${this.state.bonusDmgFlat}`)
+    this.atkComboTxt.setText(atkParts.join(''))
 
-    const defParts = [`${defSum}`]
-    if (def.combo > 0) defParts.push(`+${def.combo}`)
+    const defParts: string[] = []
+    if (this.pendingHeroDef > 0) defParts.push(`${this.pendingHeroDef}`)
+    defParts.push(...defInfo.parts)
     if (this.state.passives.includes('iron_skin')) defParts.push('+2')
-    this.defComboTxt.setText(defParts.length > 1 ? defParts.join('') : '')
+    if (this.state.bonusDefFlat > 0) defParts.push(`+${this.state.bonusDefFlat}`)
+    this.defComboTxt.setText(defParts.join('+'))
+  }
+
+  private setHeroDef(value: number) {
+    if (value > DEF_MAX) this.heroDefBar.setMax(value)
+    this.heroDefBar.setValue(value)
   }
 
   private highlightCombos(dice: DieSprite[]) {
@@ -498,35 +558,22 @@ export class CombatScene extends Phaser.Scene {
     }
   }
 
-  private setDiceInteractive(group: DiceGroup, on: boolean) {
-    const dice = group === 'atk' ? this.atkDice
-      : group === 'def' ? this.defDice : [this.mulDice]
-    for (const d of dice) d.setDiceInteractive(on)
+  private setDiceInteractive(_group: DiceGroup, on: boolean) {
+    for (const d of this.atkDice) d.setDiceInteractive(on)
   }
 
   private updateRerollLabels() {
-    const update = (
-      txt: Phaser.GameObjects.Text,
-      btn: Phaser.GameObjects.Zone,
-      count: number,
-    ) => {
-      txt.setText(`[R] x${count}`)
-      if (count <= 0) {
-        txt.setColor('#555555')
-        btn.disableInteractive()
-      } else {
-        txt.setColor('#dddddd')
-        btn.setInteractive({ useHandCursor: true })
-      }
+    const count = this.rerolls.atk
+    this.atkRerollTxt.setText(`[R] x${count}`)
+    if (count <= 0) {
+      this.atkRerollTxt.setColor('#555555')
+      this.atkRerollBtn.disableInteractive()
+    } else {
+      this.atkRerollTxt.setColor('#dddddd')
+      this.atkRerollBtn.setInteractive({ useHandCursor: true })
     }
 
-    update(this.atkRerollTxt, this.atkRerollBtn, this.rerolls.atk)
-    update(this.defRerollTxt, this.defRerollBtn, this.rerolls.def)
-    update(this.mulRerollTxt, this.mulRerollBtn, this.rerolls.mul)
-
-    this.setDiceInteractive('atk', this.rerolls.atk > 0 && !this.attacking)
-    this.setDiceInteractive('def', this.rerolls.def > 0 && !this.attacking)
-    this.setDiceInteractive('mul', this.rerolls.mul > 0 && !this.attacking)
+    this.setDiceInteractive('atk', count > 0 && !this.attacking)
   }
 
   // ── Combat flow ───────────────────────────────────────────
@@ -534,42 +581,43 @@ export class CombatScene extends Phaser.Scene {
   private onAttack() {
     if (this.attacking) return
     this.attacking = true
+    this.dismissRerollHint()
     this.attackBtnTxt.setText('...')
     this.attackBtnZone.disableInteractive()
     this.setRerollButtonsEnabled(false)
+    AudioSystem.play('attack')
 
     const atkVals = this.atkDice.map(d => d.value)
-    const defVals = this.defDice.map(d => d.value)
-    const mulVal = this.mulDice.value
 
-    // brief flash on dice
-    const allDice = [...this.atkDice, ...this.defDice, this.mulDice]
-    allDice.forEach(d => d.highlight(true))
+    this.atkDice.forEach(d => d.highlight(true))
     this.time.delayedCall(200, () => {
-      allDice.forEach(d => d.highlight(false))
-      this.resolveCombatValues(atkVals, defVals, mulVal)
+      this.atkDice.forEach(d => d.highlight(false))
+      this.resolveCombatValues(atkVals)
     })
   }
 
-  private resolveCombatValues(
-    atkVals: number[],
-    defVals: number[],
-    mulVal: number,
-  ) {
-    const result = CombatEngine.resolve(atkVals, defVals, mulVal, this.enemy, this.state)
-    this.heroDefBar.setValue(result.defTotal)
+  private resolveCombatValues(atkVals: number[]) {
+    const result = CombatEngine.resolve(
+      atkVals,
+      this.enemy,
+      this.state,
+      this.pendingHeroDef,
+    )
+    this.pendingHeroDef = result.defTotal
+    this.setHeroDef(result.defTotal)
     this.defPreviewTxt.setText(`DEF ${result.defTotal}`)
     this.enemyDefBar.setValue(this.enemy.totalDefense)
 
     const enemyX = this.cameras.main.width - ENEMY_X_OFFSET
-    const heroX = 60
     const floatY = 100
 
     if (result.phaseBlocked) {
-      addPixelText(this, enemyX, floatY, 'FASE', {
+      AudioSystem.play('block')
+      addPixelText(this, enemyX, floatY, t('combat.phase'), {
         fontSize: '16px', color: '#aa88ff',
       }).setOrigin(0.5).setDepth(50)
     } else {
+      AudioSystem.play('hit')
       if (result.atkCombo > 0) {
         DamageNumbers.show(this, enemyX, floatY - 10, result.atkCombo, '#ffaa00')
       }
@@ -589,31 +637,84 @@ export class CombatScene extends Phaser.Scene {
       return
     }
 
-    this.time.delayedCall(700, () => {
-      const eResult = CombatEngine.enemyAttack(
-        this.state.floor,
-        result.defTotal,
-        this.enemy,
-      )
+    this.time.delayedCall(500, () => this.runEnemyTurn())
+  }
 
-      DamageNumbers.show(
-        this,
-        heroX,
-        floatY + 4,
-        eResult.damage,
-        eResult.blocked >= eResult.damage ? '#88aacc' : '#ff8844',
-      )
+  private runEnemyTurn() {
+    this.setEnemyDiceDimmed(false)
+    this.enemyRerollsLeft = this.enemy.rerollMax
+    this.updateEnemyRerollLabel()
+    this.attackBtnTxt.setText(t('combat.enemyTurn'))
+    AudioSystem.play('dice')
 
-      this.tweens.add({
-        targets: this.heroGfx,
-        alpha: 0.3, yoyo: true, duration: 80, repeat: 2,
+    const finals = this.enemyAtkDice.map(() => Math.floor(Math.random() * 6) + 1)
+    let done = 0
+    this.enemyAtkDice.forEach((d, i) => {
+      d.roll(finals[i], () => {
+        done++
+        if (done >= this.enemyAtkDice.length) {
+          this.highlightCombos(this.enemyAtkDice)
+          this.updateEnemyPreview()
+          this.time.delayedCall(400, () => this.enemyAiRerollStep())
+        }
       })
-      this.shakeTarget(this.heroGfx)
+    })
+  }
 
-      const remainingDef = Math.max(0, result.defTotal - eResult.blocked)
-      this.heroDefBar.setValue(remainingDef)
-      this.defPreviewTxt.setText(`DEF ${remainingDef}`)
+  private enemyAiRerollStep() {
+    const values = this.enemyAtkDice.map(d => d.value)
+    const idx =
+      this.enemyRerollsLeft > 0 ? EnemyAI.chooseRerollIndex(values) : null
 
+    if (idx === null) {
+      this.time.delayedCall(350, () => this.resolveEnemyAttack())
+      return
+    }
+
+    this.enemyRerollsLeft--
+    this.updateEnemyRerollLabel()
+    AudioSystem.play('reroll')
+    const next = Math.floor(Math.random() * 6) + 1
+    this.enemyAtkDice[idx].roll(next, () => {
+      this.highlightCombos(this.enemyAtkDice)
+      this.updateEnemyPreview()
+      this.time.delayedCall(350, () => this.enemyAiRerollStep())
+    })
+  }
+
+  private resolveEnemyAttack() {
+    const atkVals = this.enemyAtkDice.map(d => d.value)
+    const eResult = CombatEngine.enemyAttack(
+      atkVals,
+      this.pendingHeroDef,
+      this.enemy,
+    )
+
+    const heroX = 60
+    const floatY = 100
+
+    DamageNumbers.show(
+      this,
+      heroX,
+      floatY + 4,
+      eResult.damage,
+      eResult.blocked >= eResult.damage ? '#88aacc' : '#ff8844',
+    )
+
+    AudioSystem.play(eResult.overflow > 0 ? 'hurt' : 'block')
+
+    this.tweens.add({
+      targets: this.heroGfx,
+      alpha: 0.3, yoyo: true, duration: 80, repeat: 2,
+    })
+    this.shakeTarget(this.heroGfx)
+
+    // Shield updates first, then HP — never looks like HP before DEF
+    this.pendingHeroDef = eResult.remainingDef
+    this.setHeroDef(eResult.remainingDef)
+    this.defPreviewTxt.setText(`DEF ${eResult.remainingDef}`)
+
+    const applyHp = () => {
       if (eResult.overflow > 0) {
         this.state.hp = Math.max(0, this.state.hp - eResult.overflow)
         this.heroHpBar.setValue(this.state.hp)
@@ -629,14 +730,20 @@ export class CombatScene extends Phaser.Scene {
         this.heroHpBar.setValue(this.state.hp)
       }
 
-      this.time.delayedCall(500, () => {
+      this.time.delayedCall(450, () => {
         if (this.state.hp <= 0) {
           this.onHeroKilled()
         } else {
           this.resetPlayerTurn()
         }
       })
-    })
+    }
+
+    if (eResult.overflow > 0) {
+      this.time.delayedCall(220, applyHp)
+    } else {
+      applyHp()
+    }
   }
 
   private onHeroKilled() {
@@ -652,8 +759,9 @@ export class CombatScene extends Phaser.Scene {
 
     applyPassiveOnKill(this.state)
     SaveSystem.save('quicksave', this.state)
+    AudioSystem.play('ko')
 
-    const koTxt = addPixelText(this, enemyRestX, 100, 'KO!', {
+    const koTxt = addPixelText(this, enemyRestX, 100, t('combat.ko'), {
       fontSize: '16px', color: '#ffcc44',
     }).setOrigin(0.5).setDepth(50)
 
@@ -688,12 +796,17 @@ export class CombatScene extends Phaser.Scene {
     this.enemyGfx.y = 0
     this.drawCharacter(this.enemyGfx, enemyX, baseY, 0xcc4444)
 
-    this.enemyNameText.setText(this.enemy.name)
+    this.enemyNameText.setText(enemyName(this.enemy.templateId))
     this.enemyNameText.setAlpha(1)
     this.enemyNameText.setPosition(enemyX + 40, GROUND_Y - 22)
 
     this.bindEnemyBars()
     this.redrawEnemyQueue()
+    this.enemyLabelTxt.setText(enemyName(this.enemy.templateId))
+    this.buildEnemyDice()
+    this.enemyRerollsLeft = this.enemy.rerollMax
+    this.enemyRerollTxt.setText(`[R] x${this.enemyRerollsLeft}`)
+    this.setEnemyDiceDimmed(true)
     this.updatePreviews()
 
     this.tweens.add({
@@ -712,20 +825,89 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private resetPlayerTurn() {
-    this.attacking = false
     this.rerolls = { ...effectiveRerollMax(this.state) }
-    this.preRollAll()
-    this.heroDefBar.setValue(0)
+    this.setHeroDef(this.pendingHeroDef)
     this.enemyDefBar.setValue(this.enemy.totalDefense)
-    this.enableAttack()
+    this.enemyRerollsLeft = this.enemy.rerollMax
+    this.enemyRerollTxt.setText(`[R] x${this.enemyRerollsLeft}`)
+    this.setEnemyDiceDimmed(true)
+    this.preRollAll(() => this.enableAttack())
   }
 
   private enableAttack() {
     this.attacking = false
-    this.attackBtnTxt.setText('ATACAR')
+    this.attackBtnTxt.setText(t('combat.attack'))
     this.attackBtnZone.setInteractive({ useHandCursor: true })
     this.redrawAttackBtnDefault()
     this.setRerollButtonsEnabled(true)
+    if (!this.rerollHintShown) {
+      this.rerollHintShown = true
+      this.showRerollHint()
+    }
+  }
+
+  private showRerollHint() {
+    const { width } = this.cameras.main
+    this.rerollHintTxt = addPixelText(
+      this,
+      width / 2,
+      148,
+      t('combat.rerollHint'),
+      { fontSize: '8px', color: '#ffeeaa' },
+    ).setOrigin(0.5).setDepth(30)
+
+    if (!preferReducedMotion()) {
+      this.tweens.add({
+        targets: [this.atkRerollTxt],
+        alpha: 0.3,
+        yoyo: true,
+        repeat: 5,
+        duration: 220,
+      })
+
+      const demo = this.atkDice[0]
+      if (demo) {
+        demo.setComboBorder(0xffcc44)
+        this.tweens.add({
+          targets: demo,
+          scaleX: 1.18,
+          scaleY: 1.18,
+          yoyo: true,
+          repeat: 4,
+          duration: 220,
+          onComplete: () => {
+            demo.setScale(1)
+            if (!this.attacking) this.updateCombos()
+          },
+        })
+      }
+    }
+
+    this.rerollHintTimer = this.time.delayedCall(
+      preferReducedMotion() ? 1800 : 3200,
+      () => this.dismissRerollHint(),
+    )
+  }
+
+  private dismissRerollHint() {
+    this.rerollHintTimer?.remove(false)
+    this.rerollHintTimer = null
+    this.tweens.killTweensOf([this.atkRerollTxt])
+    this.atkRerollTxt?.setAlpha(1)
+    if (this.atkDice[0]) {
+      this.tweens.killTweensOf(this.atkDice[0])
+      this.atkDice[0].setScale(1)
+    }
+    const txt = this.rerollHintTxt
+    this.rerollHintTxt = null
+    if (txt) {
+      this.tweens.add({
+        targets: txt,
+        alpha: 0,
+        duration: 180,
+        onComplete: () => txt.destroy(),
+      })
+    }
   }
 
   private shakeTarget(
@@ -733,13 +915,17 @@ export class CombatScene extends Phaser.Scene {
     intensity = 4,
     duration = 220,
   ) {
+    if (preferReducedMotion()) {
+      intensity = Math.min(intensity, 2)
+      duration = Math.min(duration, 120)
+    }
     this.shakeTimers.get(target)?.remove(false)
     target.x = 0
     target.y = 0
 
     const start = this.time.now
     const event = this.time.addEvent({
-      delay: 28,
+      delay: preferReducedMotion() ? 40 : 28,
       loop: true,
       callback: () => {
         const t = this.time.now - start
@@ -759,16 +945,11 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private setRerollButtonsEnabled(on: boolean) {
-    const btns = [this.atkRerollBtn, this.defRerollBtn, this.mulRerollBtn]
-    for (const b of btns) {
-      if (!on) b.disableInteractive()
-    }
+    if (!on) this.atkRerollBtn.disableInteractive()
     if (on) {
       this.updateRerollLabels()
     } else {
       this.setDiceInteractive('atk', false)
-      this.setDiceInteractive('def', false)
-      this.setDiceInteractive('mul', false)
     }
   }
 }

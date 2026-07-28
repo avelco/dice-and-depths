@@ -3,6 +3,7 @@ import { getRunState, renderDebugHeader } from '../debug'
 import { SaveSystem } from '../systems/SaveSystem'
 import { addPixelText } from '../ui/pixelText'
 import { markCurrentNodeCleared } from './MapScene'
+import { t } from '../i18n/I18n'
 
 export class RestScene extends Phaser.Scene {
   private locked = false
@@ -22,21 +23,21 @@ export class RestScene extends Phaser.Scene {
 
     renderDebugHeader(this, rs)
 
-    addPixelText(this, cx, 40, 'DESCANSO', {
+    addPixelText(this, cx, 40, t('rest.title'), {
       fontSize: '12px', color: '#66cccc', fontStyle: 'bold',
     }).setOrigin(0.5)
 
     const choices = [
       {
-        label: `Dormir (cura ${Math.floor(rs.maxHp * 0.4)} HP)`,
+        label: t('rest.sleep', { n: Math.floor(rs.maxHp * 0.4) }),
         apply: () => {
           rs.hp = Math.min(rs.maxHp, rs.hp + Math.floor(rs.maxHp * 0.4))
         },
       },
       {
-        label: 'Entrenar (+1 reroll DEF max)',
+        label: t('rest.train'),
         apply: () => {
-          rs.rerollMax.def = Math.min(5, rs.rerollMax.def + 1)
+          rs.rerollMax.atk = Math.min(8, rs.rerollMax.atk + 1)
         },
       },
     ]

@@ -1,5 +1,11 @@
 import Phaser from 'phaser'
 import { addPixelText } from '../ui/pixelText'
+import { AudioSystem } from '../systems/AudioSystem'
+import { bindSceneKeys } from '../systems/bindSceneKeys'
+import { MetaProgression } from '../domain/progression/MetaProgression'
+import { t } from '../i18n/I18n'
+import { enableTouchTarget } from '../ui/touchTarget'
+import { syncRotateHintLocale } from '../ui/rotateHint'
 
 const SCENE_KEYS = [
   'BootScene',
@@ -13,6 +19,7 @@ const SCENE_KEYS = [
   'ShopScene',
   'ForgeScene',
   'GameOverScene',
+  'InventoryScene',
 ]
 
 interface MenuItem {
@@ -31,28 +38,48 @@ export class MenuScene extends Phaser.Scene {
     super('MenuScene')
   }
 
+  init() {
+    this.inputLocked = false
+    this.selectedIndex = 0
+    this.items = []
+  }
+
   create() {
+    MetaProgression.load()
+    syncRotateHintLocale()
     const { width } = this.cameras.main
     const cx = width / 2
-    const startY = 110
-    const spacing = 22
+    const startY = 100
+    const spacing = 24
+
+    const unlock = () => AudioSystem.unlock()
+    this.input.on('pointerdown', unlock)
 
     addPixelText(this, cx, 36, 'DICE & DEPTHS', {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
 
+    addPixelText(this, cx, 58, t('menu.gold', { n: MetaProgression.getGold() }), {
+      fontSize: '8px',
+      color: '#ffcc66',
+    }).setOrigin(0.5)
+
+    const floor = MetaProgression.getCampaignFloor()
     const entries: ReadonlyArray<readonly [string, string]> = [
-      ['Descender', 'CharacterSelectScene'],
-      ['Opciones', 'EventScene'],
+      [t('menu.descendFloor', { n: floor }), 'CharacterSelectScene'],
+      [t('menu.inventory'), 'InventoryScene'],
+      [t('menu.forge'), 'ForgeScene'],
+      [t('menu.tree'), 'SkillTreeScene'],
+      [t('menu.options'), 'OptionsScene'],
     ]
 
     this.items = entries.map(([label, sceneKey], i) => {
       const text = addPixelText(this, cx, startY + i * spacing, label, {
         fontSize: '16px',
         color: '#888888',
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true })
-
+      }).setOrigin(0.5)
+      enableTouchTarget(text)
       text.on('pointerover', () => this.select(i))
       text.on('pointerdown', () => this.confirm(i))
       return { label, sceneKey, text }
@@ -65,27 +92,33 @@ export class MenuScene extends Phaser.Scene {
 
     this.select(0)
 
-    addPixelText(this, cx, 250, 'flechas / enter', {
+    addPixelText(this, cx, 250, t('menu.hint'), {
       fontSize: '8px',
       color: '#666666',
     }).setOrigin(0.5)
 
-    this.input.keyboard!.on('keydown-UP', () => this.move(-1))
-    this.input.keyboard!.on('keydown-DOWN', () => this.move(1))
-    this.input.keyboard!.on('keydown-ENTER', () => this.confirm(this.selectedIndex))
-
     const debugKeys = SCENE_KEYS as readonly string[]
-    this.input.keyboard!.on('keydown-ONE', () => this.scene.start(debugKeys[0]))
-    this.input.keyboard!.on('keydown-TWO', () => this.scene.start(debugKeys[1]))
-    this.input.keyboard!.on('keydown-THREE', () => this.scene.start(debugKeys[2]))
-    this.input.keyboard!.on('keydown-FOUR', () => this.scene.start(debugKeys[3]))
-    this.input.keyboard!.on('keydown-FIVE', () => this.scene.start(debugKeys[4]))
-    this.input.keyboard!.on('keydown-SIX', () => this.scene.start(debugKeys[5]))
-    this.input.keyboard!.on('keydown-SEVEN', () => this.scene.start(debugKeys[6]))
-    this.input.keyboard!.on('keydown-EIGHT', () => this.scene.start(debugKeys[7]))
-    this.input.keyboard!.on('keydown-NINE', () => this.scene.start(debugKeys[8]))
-    this.input.keyboard!.on('keydown-BACKSPACE', () => this.scene.start(debugKeys[9]))
-    this.input.keyboard!.on('keydown-ESC', () => this.scene.start(debugKeys[10]))
+    bindSceneKeys(this, {
+      keydown: unlock,
+      'keydown-UP': () => this.move(-1),
+      'keydown-DOWN': () => this.move(1),
+      'keydown-ENTER': () => this.confirm(this.selectedIndex),
+      'keydown-ONE': () => this.scene.start(debugKeys[0]),
+      'keydown-TWO': () => this.scene.start(debugKeys[1]),
+      'keydown-THREE': () => this.scene.start(debugKeys[2]),
+      'keydown-FOUR': () => this.scene.start(debugKeys[3]),
+      'keydown-FIVE': () => this.scene.start(debugKeys[4]),
+      'keydown-SIX': () => this.scene.start(debugKeys[5]),
+      'keydown-SEVEN': () => this.scene.start(debugKeys[6]),
+      'keydown-EIGHT': () => this.scene.start(debugKeys[7]),
+      'keydown-NINE': () => this.scene.start(debugKeys[8]),
+      'keydown-BACKSPACE': () => this.scene.start(debugKeys[9]),
+      'keydown-ESC': () => this.scene.start(debugKeys[10]),
+    })
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.off('pointerdown', unlock)
+    })
   }
 
   private move(dir: number) {
@@ -103,6 +136,7 @@ export class MenuScene extends Phaser.Scene {
       next.text.setColor('#ffffff')
       this.cursor.setY(next.text.y)
     }
+    AudioSystem.play('ui')
   }
 
   private confirm(index: number) {
@@ -110,6 +144,8 @@ export class MenuScene extends Phaser.Scene {
     this.inputLocked = true
     const item = this.items[index]
     if (!item) return
+    AudioSystem.unlock()
+    AudioSystem.play('select')
     this.time.delayedCall(150, () => this.scene.start(item.sceneKey))
   }
 }

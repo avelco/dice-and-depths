@@ -1,5 +1,5 @@
 [
-  { "id": "iron_skin", "name": "Piel de hierro", "description": "+2 DEF total de dados" },
+  { "id": "iron_skin", "name": "Piel de hierro", "description": "+2 DEF (combos ATK)" },
   { "id": "lucky_roll", "name": "Suerte", "description": "+1 reroll ATK" },
   { "id": "vampiric", "name": "Vampírico", "description": "Cura 1 HP al matar" },
   { "id": "heavy_hit", "name": "Golpe pesado", "description": "+2 daño final" },

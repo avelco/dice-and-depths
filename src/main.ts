@@ -11,9 +11,23 @@ import { ShopScene } from './scenes/ShopScene'
 import { ForgeScene } from './scenes/ForgeScene'
 import { RestScene } from './scenes/RestScene'
 import { GameOverScene } from './scenes/GameOverScene'
+import { InventoryScene } from './scenes/InventoryScene'
+import { SkillTreeScene } from './scenes/SkillTreeScene'
+import { FragmentShopScene } from './scenes/FragmentShopScene'
+import { OptionsScene } from './scenes/OptionsScene'
 import { createDebugState } from './debug'
 import { SaveSystem } from './systems/SaveSystem'
 import type { RunState } from './domain/progression/RunState'
+import { MetaProgression } from './domain/progression/MetaProgression'
+import { AudioSystem } from './systems/AudioSystem'
+import { syncRotateHintLocale } from './ui/rotateHint'
+
+MetaProgression.load()
+syncRotateHintLocale()
+
+const unlockAudio = () => AudioSystem.unlock()
+window.addEventListener('pointerdown', unlockAudio, { once: false, passive: true })
+window.addEventListener('touchstart', unlockAudio, { once: false, passive: true })
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -43,12 +57,26 @@ const game = new Phaser.Game({
     RestScene,
     ForgeScene,
     GameOverScene,
+    InventoryScene,
+    SkillTreeScene,
+    FragmentShopScene,
+    OptionsScene,
   ],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    parent: 'app',
+    expandParent: false,
+    fullscreenTarget: 'app',
   },
 })
+
+const refreshScale = () => game.scale.refresh()
+window.addEventListener('resize', refreshScale)
+window.addEventListener('orientationchange', () => {
+  window.setTimeout(refreshScale, 120)
+})
+window.visualViewport?.addEventListener('resize', refreshScale)
 
 const SHORTCUTS: ReadonlyArray<readonly [string, string, number]> = [
   ['1', 'MapScene', 5],
@@ -76,7 +104,7 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
     const existing = SaveSystem.load('quicksave')
     if (existing) {
       existing.floor = 5
-      existing.gold = 200
+      existing.coins = 200
       SaveSystem.save('quicksave', existing)
       console.log('[quicksave] saved manual snapshot')
     } else {

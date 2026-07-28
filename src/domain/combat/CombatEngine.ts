@@ -7,7 +7,6 @@ export interface CombatResult {
   atkCombo: number
   defTotal: number
   defCombo: number
-  multiplier: number
   rawDamage: number
   finalDamage: number
   killed: boolean
@@ -19,10 +18,16 @@ export interface DicePower {
   combo: number
 }
 
+export interface DefensePower {
+  total: number
+  parts: string[]
+}
+
 export interface EnemyTurnResult {
   damage: number
   blocked: number
   overflow: number
+  remainingDef: number
   goldStolen: number
 }
 
@@ -42,30 +47,48 @@ export class CombatEngine {
     return { total: sum + combo, combo }
   }
 
-  static heroDefTotal(defDice: number[], state: RunState): number {
-    const def = CombatEngine.computePower(defDice)
-    let total = def.total
+  /** DEF from matching dice only: pair×1, trio×3, quad+×6. */
+  static computeDefense(dice: number[]): DefensePower {
+    const counts = new Map<number, number>()
+    for (const v of dice) counts.set(v, (counts.get(v) ?? 0) + 1)
+
+    let total = 0
+    const parts: string[] = []
+    const values = [...counts.keys()].sort((a, b) => a - b)
+    for (const value of values) {
+      const count = counts.get(value) ?? 0
+      if (count < 2) continue
+      const mult = count >= 4 ? 6 : count === 3 ? 3 : 1
+      total += value * mult
+      parts.push(`${value}x${count >= 4 ? 4 : count}`)
+    }
+    return { total, parts }
+  }
+
+  static heroDefTotal(atkDice: number[], state: RunState): number {
+    let total = CombatEngine.computeDefense(atkDice).total
     if (hasPassive(state, 'iron_skin')) total += 2
+    total += state.bonusDefFlat
     return total
   }
 
   static resolve(
     atkDice: number[],
-    defDice: number[],
-    mulDie: number,
     enemy: Enemy,
     state: RunState,
+    carriedDef = 0,
   ): CombatResult {
     const atk = CombatEngine.computePower(atkDice)
-    const defTotal = CombatEngine.heroDefTotal(defDice, state)
+    const def = CombatEngine.computeDefense(atkDice)
+    const rollDef = CombatEngine.heroDefTotal(atkDice, state)
+    const defTotal = carriedDef + rollDef
 
     if (enemy.skill === 'phase' && Math.random() < 0.25) {
       return {
         atkTotal: atk.total,
         atkCombo: atk.combo,
         defTotal,
-        defCombo: CombatEngine.computePower(defDice).combo,
-        multiplier: mulDie,
+        defCombo: def.total,
         rawDamage: 0,
         finalDamage: 0,
         killed: false,
@@ -74,8 +97,9 @@ export class CombatEngine {
     }
 
     const rawDamage = Math.max(1, atk.total - enemy.totalDefense)
-    let finalDamage = rawDamage * mulDie
+    let finalDamage = rawDamage
     if (hasPassive(state, 'heavy_hit')) finalDamage += 2
+    finalDamage += state.bonusDmgFlat
 
     enemy.hp = Math.max(0, enemy.hp - finalDamage)
 
@@ -87,8 +111,7 @@ export class CombatEngine {
       atkTotal: atk.total,
       atkCombo: atk.combo,
       defTotal,
-      defCombo: CombatEngine.computePower(defDice).combo,
-      multiplier: mulDie,
+      defCombo: def.total,
       rawDamage,
       finalDamage,
       killed: !enemy.alive,
@@ -97,33 +120,36 @@ export class CombatEngine {
   }
 
   static enemyAttack(
-    floor: number,
+    atkDice: number[],
     heroDefense: number,
     enemy: Enemy,
   ): EnemyTurnResult {
     enemy.turnCount += 1
-    let enemyAtk = floor * 2 + Math.floor(Math.random() * 5) + 1
+    const power = CombatEngine.computePower(atkDice)
+    let enemyAtk = power.total
 
     if (enemy.skill === 'slam' && enemy.turnCount % 2 === 0) {
       enemyAtk *= 2
     }
 
-    let effectiveDef = heroDefense
+    // bone_toss: only half the shield can absorb; the rest is pierce
+    let absorbCap = heroDefense
     if (enemy.skill === 'bone_toss') {
-      effectiveDef = Math.floor(heroDefense * 0.5)
+      absorbCap = Math.floor(heroDefense * 0.5)
     }
 
-    const blocked = Math.min(effectiveDef, enemyAtk)
-    const overflow = Math.max(0, enemyAtk - effectiveDef)
-    let goldStolen = 0
+    const blocked = Math.min(absorbCap, enemyAtk)
+    const overflow = Math.max(0, enemyAtk - absorbCap)
+    // Never leave shield up if HP was hit (pierce / break)
+    const remainingDef = overflow > 0 ? 0 : Math.max(0, heroDefense - blocked)
 
-    return { damage: enemyAtk, blocked, overflow, goldStolen }
+    return { damage: enemyAtk, blocked, overflow, remainingDef, goldStolen: 0 }
   }
 
   static applySteal(state: RunState, overflow: number): number {
     if (overflow <= 0) return 0
-    const stolen = Math.min(5, state.gold)
-    state.gold -= stolen
+    const stolen = Math.min(5, state.coins)
+    state.coins -= stolen
     return stolen
   }
 }

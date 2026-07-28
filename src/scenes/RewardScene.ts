@@ -2,18 +2,32 @@ import Phaser from 'phaser'
 import { getRunState, renderDebugHeader } from '../debug'
 import { SaveSystem } from '../systems/SaveSystem'
 import { addPixelText } from '../ui/pixelText'
+import { enableTouchTarget } from '../ui/touchTarget'
 import type { RunState, RewardTier } from '../domain/progression/RunState'
-import { pickRandomPassiveIds, passiveDef } from '../domain/progression/Passives'
-import { advanceFloorAfterBoss, markCurrentNodeCleared } from './MapScene'
+import { pickRandomPassiveIds } from '../domain/progression/Passives'
+import { MetaProgression } from '../domain/progression/MetaProgression'
+import { GEAR, type GearDef } from '../domain/items/Equipment'
+import { markCurrentNodeCleared } from './MapScene'
+import { AudioSystem } from '../systems/AudioSystem'
+import { bindSceneKeys } from '../systems/bindSceneKeys'
+import { gearName, passiveName, t } from '../i18n/I18n'
 
-type RewardKind = 'gold' | 'heal' | 'dice_atk' | 'dice_def' | 'passive'
+type RewardKind = 'coins' | 'heal' | 'dice_atk' | 'reroll_atk' | 'passive'
 
 interface RewardOption {
   kind: RewardKind
   label: string
-  gold?: number
+  coins?: number
   heal?: number
   passiveId?: string
+}
+
+interface ChestPrize {
+  gearId: string
+  label: string
+  /** Already owned — picking grants meta gold instead. */
+  duplicate: boolean
+  gold?: number
 }
 
 function mulberry32(seed: number) {
@@ -26,24 +40,32 @@ function mulberry32(seed: number) {
   }
 }
 
+function pickOne<T>(arr: T[], rng: () => number): T | undefined {
+  if (arr.length === 0) return undefined
+  return arr[Math.floor(rng() * arr.length)]
+}
+
+function dupGoldAmount(floor: number, rng: () => number): number {
+  return 40 + floor * 8 + Math.floor(rng() * 20)
+}
+
 function buildOptions(state: RunState, tier: RewardTier): RewardOption[] {
   const rng = mulberry32(state.seed + state.floor * 17 + Date.now() % 1000)
-  const goldBase = tier === 'boss' ? 45 : tier === 'elite' ? 28 : 15
+  const coinBase = tier === 'elite' ? 28 : 15
   const options: RewardOption[] = [
-    { kind: 'gold', label: `+${goldBase + state.floor * 3} oro`, gold: goldBase + state.floor * 3 },
-    { kind: 'heal', label: `Cura ${Math.floor(state.maxHp * 0.3)} HP`, heal: Math.floor(state.maxHp * 0.3) },
+    { kind: 'coins', label: t('reward.coins', { n: coinBase + state.floor * 3 }), coins: coinBase + state.floor * 3 },
+    { kind: 'heal', label: t('reward.heal', { n: Math.floor(state.maxHp * 0.3) }), heal: Math.floor(state.maxHp * 0.3) },
   ]
 
   if (state.diceLoadout.atk < 6 && rng() > 0.4) {
-    options.push({ kind: 'dice_atk', label: '+1 dado ATK' })
-  } else if (state.diceLoadout.def < 5 && rng() > 0.3) {
-    options.push({ kind: 'dice_def', label: '+1 dado DEF' })
+    options.push({ kind: 'dice_atk', label: t('reward.diceAtk') })
+  } else if (state.rerollMax.atk < 8 && rng() > 0.35) {
+    options.push({ kind: 'reroll_atk', label: t('reward.rerollAtk') })
   } else {
     const [pid] = pickRandomPassiveIds(1, state.passives, rng)
-    const def = passiveDef(pid)
     options.push({
       kind: 'passive',
-      label: def?.name ?? 'Passive',
+      label: pid ? passiveName(pid) : t('reward.passive'),
       passiveId: pid,
     })
   }
@@ -52,22 +74,70 @@ function buildOptions(state: RunState, tier: RewardTier): RewardOption[] {
     const [pid] = pickRandomPassiveIds(1, state.passives, rng)
     if (!pid) {
       options.push({
-        kind: 'gold',
-        label: `+${Math.floor(goldBase / 2)} oro`,
-        gold: Math.floor(goldBase / 2),
+        kind: 'coins',
+        label: t('reward.coins', { n: Math.floor(coinBase / 2) }),
+        coins: Math.floor(coinBase / 2),
       })
       continue
     }
-    const def = passiveDef(pid)
-    options.push({ kind: 'passive', label: def?.name ?? 'Passive', passiveId: pid })
+    options.push({ kind: 'passive', label: passiveName(pid), passiveId: pid })
   }
 
   return options.slice(0, 3)
 }
 
+function pickGearFromPool(pool: GearDef[], rng: () => number): GearDef | undefined {
+  if (pool.length === 0) return undefined
+  const rare = pool.filter(g => g.rarity === 'rare')
+  return pickOne(rare.length > 0 && rng() < 0.65 ? rare : pool, rng)
+}
+
+/** Boss chest: 5 unique set pieces; player picks one into meta bag. */
+function buildBossChest(state: RunState): ChestPrize[] {
+  const rng = mulberry32(state.seed + state.floor * 91 + 404)
+  const owned = MetaProgression.ownedGearIds()
+  const offered = new Set<string>()
+  const prizes: ChestPrize[] = []
+
+  const take = (pool: GearDef[], duplicate: boolean) => {
+    const available = pool.filter(g => !offered.has(g.id))
+    const pick = pickGearFromPool(available, rng)
+    if (!pick) return false
+    offered.add(pick.id)
+    const gold = duplicate ? dupGoldAmount(state.floor, rng) : undefined
+    prizes.push({
+      gearId: pick.id,
+      duplicate,
+      gold,
+      label: duplicate
+        ? t('reward.chestDupGold', { name: gearName(pick.id), n: gold ?? 0 })
+        : t('reward.chestGear', { name: gearName(pick.id) }),
+    })
+    return true
+  }
+
+  while (prizes.length < 5) {
+    const unowned = GEAR.filter(g => !owned.has(g.id) && !offered.has(g.id))
+    if (unowned.length > 0) {
+      if (!take(unowned, false)) break
+      continue
+    }
+    const ownedPool = GEAR.filter(g => owned.has(g.id) && !offered.has(g.id))
+    if (ownedPool.length > 0) {
+      if (!take(ownedPool, true)) break
+      continue
+    }
+    break
+  }
+
+  return prizes
+}
+
 export class RewardScene extends Phaser.Scene {
   private state!: RunState
   private options: RewardOption[] = []
+  private chestPrizes: ChestPrize[] = []
+  private isChest = false
   private locked = false
 
   constructor() {
@@ -76,12 +146,14 @@ export class RewardScene extends Phaser.Scene {
 
   init() {
     this.options = []
+    this.chestPrizes = []
+    this.isChest = false
     this.locked = false
   }
 
   create() {
-    const { width, height } = this.cameras.main
-    const cx = width / 2
+    const { height } = this.cameras.main
+    const cx = this.cameras.main.width / 2
     const rs = getRunState(this)
     if (!rs) {
       this.scene.start('MenuScene')
@@ -90,9 +162,19 @@ export class RewardScene extends Phaser.Scene {
     this.state = rs
     renderDebugHeader(this, this.state)
 
+    this.isChest = this.state.pendingRewardTier === 'boss'
+
+    if (this.isChest) {
+      this.createChestUi(cx, height)
+    } else {
+      this.createPickUi(cx, height)
+    }
+  }
+
+  private createPickUi(cx: number, height: number) {
     this.options = buildOptions(this.state, this.state.pendingRewardTier)
 
-    addPixelText(this, cx, 32, 'RECOMPENSA', {
+    addPixelText(this, cx, 32, t('reward.title'), {
       fontSize: '16px',
       color: '#ffdd88',
     }).setOrigin(0.5)
@@ -109,7 +191,7 @@ export class RewardScene extends Phaser.Scene {
       txt.on('pointerdown', () => this.pick(i))
     })
 
-    addPixelText(this, cx, height - 14, '1-3 elegir', {
+    addPixelText(this, cx, height - 14, t('reward.hint'), {
       fontSize: '8px',
       color: '#999999',
     }).setOrigin(0.5)
@@ -119,48 +201,109 @@ export class RewardScene extends Phaser.Scene {
     this.input.keyboard!.once('keydown-THREE', () => this.pick(2))
   }
 
+  private createChestUi(cx: number, height: number) {
+    this.chestPrizes = buildBossChest(this.state)
+    AudioSystem.play('coin')
+
+    addPixelText(this, cx, 28, t('reward.chestTitle'), {
+      fontSize: '16px',
+      color: '#ffcc66',
+    }).setOrigin(0.5)
+
+    addPixelText(this, cx, 48, t('reward.chestPick'), {
+      fontSize: '8px',
+      color: '#aaaaaa',
+    }).setOrigin(0.5)
+
+    this.chestPrizes.forEach((prize, i) => {
+      const y = 72 + i * 28
+      const color = prize.duplicate ? '#ffdd88' : '#88ccff'
+      const txt = addPixelText(this, cx, y, `[${i + 1}] ${prize.label}`, {
+        fontSize: '8px',
+        color,
+      }).setOrigin(0.5)
+      enableTouchTarget(txt)
+      txt.on('pointerover', () => txt.setColor('#ffffff'))
+      txt.on('pointerout', () => txt.setColor(color))
+      txt.on('pointerdown', () => this.pickChest(i))
+    })
+
+    addPixelText(this, cx, height - 14, t('reward.chestHint'), {
+      fontSize: '8px',
+      color: '#999999',
+    }).setOrigin(0.5)
+
+    bindSceneKeys(this, {
+      'keydown-ONE': () => this.pickChest(0),
+      'keydown-TWO': () => this.pickChest(1),
+      'keydown-THREE': () => this.pickChest(2),
+      'keydown-FOUR': () => this.pickChest(3),
+      'keydown-FIVE': () => this.pickChest(4),
+    })
+  }
+
+  private pickChest(index: number) {
+    if (this.locked || !this.isChest) return
+    const prize = this.chestPrizes[index]
+    if (!prize) return
+    this.locked = true
+
+    if (prize.duplicate) {
+      MetaProgression.addGold(prize.gold ?? 0)
+      AudioSystem.play('coin')
+    } else {
+      MetaProgression.addGearToBag(prize.gearId)
+      AudioSystem.play('select')
+    }
+
+    this.finishReward()
+  }
+
   private pick(index: number) {
-    if (this.locked) return
+    if (this.locked || this.isChest) return
     const opt = this.options[index]
     if (!opt) return
     this.locked = true
 
     switch (opt.kind) {
-      case 'gold':
-        this.state.gold += opt.gold ?? 0
+      case 'coins':
+        this.state.coins += opt.coins ?? 0
+        AudioSystem.play('coin')
         break
       case 'heal':
         this.state.hp = Math.min(this.state.maxHp, this.state.hp + (opt.heal ?? 0))
+        AudioSystem.play('heal')
         break
       case 'dice_atk':
         this.state.diceLoadout.atk = Math.min(6, this.state.diceLoadout.atk + 1)
+        AudioSystem.play('select')
         break
-      case 'dice_def':
-        this.state.diceLoadout.def = Math.min(5, this.state.diceLoadout.def + 1)
+      case 'reroll_atk':
+        this.state.rerollMax.atk = Math.min(8, this.state.rerollMax.atk + 1)
+        AudioSystem.play('select')
         break
       case 'passive':
         if (opt.passiveId && !this.state.passives.includes(opt.passiveId)) {
           this.state.passives.push(opt.passiveId)
         }
+        AudioSystem.play('select')
         break
     }
 
+    this.finishReward()
+  }
+
+  private finishReward() {
     markCurrentNodeCleared(this.state)
 
-    let nextScene = 'MapScene'
     if (this.state.pendingRewardTier === 'boss') {
-      const result = advanceFloorAfterBoss(this.state)
-      if (result === 'victory') {
-        nextScene = 'GameOverScene'
-        this.state.lastDustEarned = 0
-        SaveSystem.save('quicksave', this.state)
-        this.scene.start(nextScene, { runState: this.state, victory: true })
-        return
-      }
+      SaveSystem.save('quicksave', this.state)
+      this.scene.start('FragmentShopScene', { runState: this.state })
+      return
     }
 
     this.state.pendingNodeKind = null
     SaveSystem.save('quicksave', this.state)
-    this.scene.start(nextScene, { runState: this.state })
+    this.scene.start('MapScene', { runState: this.state })
   }
 }

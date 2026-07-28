@@ -66,10 +66,22 @@ export class DieSprite extends Phaser.GameObjects.Container {
 
   roll(finalValue: number, onComplete?: () => void) {
     this.comboColor = null
+    this.angle = 0
+    this.scene.tweens.killTweensOf(this)
+    this.scene.tweens.add({
+      targets: this,
+      angle: 360,
+      duration: 320,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        this.angle = 0
+      },
+    })
+
     let ticks = 0
-    const totalTicks = 8
+    const totalTicks = 10
     this.scene.time.addEvent({
-      delay: 40,
+      delay: 35,
       repeat: totalTicks - 1,
       callback: () => {
         ticks++
@@ -80,7 +92,7 @@ export class DieSprite extends Phaser.GameObjects.Container {
           const rnd = Math.floor(Math.random() * 6) + 1
           this._value = rnd
           this.label.setText(String(rnd))
-          this.redraw(0x333333)
+          this.redraw(0x444444)
         }
       },
     })

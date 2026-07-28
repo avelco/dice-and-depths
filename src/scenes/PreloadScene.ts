@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { t } from '../i18n/I18n'
 
 export class PreloadScene extends Phaser.Scene {
   private progressBar!: Phaser.GameObjects.Graphics
@@ -21,7 +22,7 @@ export class PreloadScene extends Phaser.Scene {
 
     this.progressBar = this.add.graphics()
 
-    this.add.text(width / 2, y - 16, 'LOADING...', {
+    this.add.text(width / 2, y - 16, t('preload.loading'), {
       fontSize: '8px',
       color: '#aaaaaa',
       fontFamily: '"Silkscreen"',

@@ -1,26 +1,19 @@
 import Phaser from 'phaser'
 import { addPixelText } from '../ui/pixelText'
-import { createNewRun } from '../domain/progression/RunState'
+import { createNewRun, syncRunStateDerived } from '../domain/progression/RunState'
 import { MetaProgression } from '../domain/progression/MetaProgression'
-import { generateFloorMap } from '../domain/map/FloorGenerator'
+import { applyLoadoutToRun } from '../domain/progression/Loadout'
+import { CHARACTERS, applyCharacterKit } from '../domain/progression/Characters'
+import { loadDungeonMap } from '../domain/map/DungeonMap'
 import { SaveSystem } from '../systems/SaveSystem'
+import { AudioSystem } from '../systems/AudioSystem'
+import { bindSceneKeys } from '../systems/bindSceneKeys'
+import { charBuff, charHandicap, charLore, charName, t } from '../i18n/I18n'
+import { addBackButton } from '../ui/BackButton'
+import { enableTouchTarget } from '../ui/touchTarget'
 
-interface CharacterEntry {
-  name: string
-  lore: string
-  locked: boolean
-}
-
-const CHARACTERS: CharacterEntry[] = [
-  { name: 'Guerrero', lore: 'Maestro del combate cuerpo a cuerpo.', locked: false },
-  { name: 'Mago', lore: 'Domina las artes arcanas.', locked: false },
-  { name: 'Pícaro', lore: 'Veloz y letal desde las sombras.', locked: true },
-  { name: 'Clérigo', lore: 'Sanador y protector divino.', locked: true },
-  { name: 'Bárbaro', lore: 'Furia imparable en batalla.', locked: true },
-  { name: 'Explorador', lore: 'Rastreador experto en supervivencia.', locked: true },
-]
-
-function isLocked(char: CharacterEntry): boolean {
+function isLocked(index: number): boolean {
+  const char = CHARACTERS[index]
   if (char.name === 'Pícaro') return !MetaProgression.isRogueUnlocked()
   return char.locked
 }
@@ -30,96 +23,150 @@ export class CharacterSelectScene extends Phaser.Scene {
   private inputLocked = false
   private nameText!: Phaser.GameObjects.Text
   private loreText!: Phaser.GameObjects.Text
+  private buffText!: Phaser.GameObjects.Text
+  private handicapText!: Phaser.GameObjects.Text
   private lockedText!: Phaser.GameObjects.Text
   private leftArrow!: Phaser.GameObjects.Text
   private rightArrow!: Phaser.GameObjects.Text
-  private confirmPrompt!: Phaser.GameObjects.Text
+  private startBtn!: Phaser.GameObjects.Text
+  private hintText!: Phaser.GameObjects.Text
 
   constructor() {
     super('CharacterSelectScene')
+  }
+
+  init() {
+    this.inputLocked = false
+    this.selectedIndex = 0
   }
 
   create() {
     const { width, height } = this.cameras.main
     const cx = width / 2
 
-    addPixelText(this, cx, 24, 'SELECCIONA PERSONAJE', {
+    addBackButton(this, () => this.scene.start('MenuScene'))
+
+    addPixelText(this, cx, 20, t('charSelect.title'), {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
 
-    this.leftArrow = addPixelText(this, cx - 120, height / 2, '<', {
+    this.leftArrow = addPixelText(this, cx - 120, height / 2 - 20, '<', {
       fontSize: '16px',
       color: '#ffffff',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+    }).setOrigin(0.5)
+    enableTouchTarget(this.leftArrow)
 
-    this.rightArrow = addPixelText(this, cx + 120, height / 2, '>', {
+    this.rightArrow = addPixelText(this, cx + 120, height / 2 - 20, '>', {
       fontSize: '16px',
       color: '#ffffff',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+    }).setOrigin(0.5)
+    enableTouchTarget(this.rightArrow)
 
     this.leftArrow.on('pointerdown', () => this.navigate(-1))
     this.rightArrow.on('pointerdown', () => this.navigate(1))
+    this.leftArrow.on('pointerover', () => this.leftArrow.setColor('#ffffaa'))
+    this.leftArrow.on('pointerout', () => this.leftArrow.setColor('#ffffff'))
+    this.rightArrow.on('pointerover', () => this.rightArrow.setColor('#ffffaa'))
+    this.rightArrow.on('pointerout', () => this.rightArrow.setColor('#ffffff'))
 
-    this.nameText = addPixelText(this, cx, height / 2 - 8, '', {
+    this.nameText = addPixelText(this, cx, height / 2 - 36, '', {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
+    enableTouchTarget(this.nameText)
+    this.nameText.on('pointerdown', () => this.confirm())
+    this.nameText.on('pointerover', () => {
+      if (!isLocked(this.selectedIndex)) this.nameText.setColor('#ffffcc')
+    })
+    this.nameText.on('pointerout', () => this.nameText.setColor('#ffffff'))
 
-    this.loreText = addPixelText(this, cx, height / 2 + 14, '', {
+    this.loreText = addPixelText(this, cx, height / 2 - 14, '', {
       fontSize: '8px',
       color: '#aaaaaa',
-      wordWrap: { width: 220 },
+      wordWrap: { width: 260 },
       align: 'center',
     }).setOrigin(0.5)
 
-    this.lockedText = addPixelText(this, cx, height / 2 + 36, '', {
+    this.buffText = addPixelText(this, cx, height / 2 + 12, '', {
+      fontSize: '8px',
+      color: '#88cc88',
+    }).setOrigin(0.5)
+
+    this.handicapText = addPixelText(this, cx, height / 2 + 28, '', {
+      fontSize: '8px',
+      color: '#cc8888',
+    }).setOrigin(0.5)
+
+    this.lockedText = addPixelText(this, cx, height / 2 + 48, '', {
       fontSize: '8px',
       color: '#cc6666',
     }).setOrigin(0.5)
 
-    this.confirmPrompt = addPixelText(this, cx, height - 24, 'Enter: seleccionar', {
-      fontSize: '8px',
-      color: '#777777',
+    this.startBtn = addPixelText(this, cx, height - 40, t('charSelect.descend'), {
+      fontSize: '16px',
+      color: '#88cc88',
     }).setOrigin(0.5)
+    enableTouchTarget(this.startBtn)
+    this.startBtn.on('pointerdown', () => this.confirm())
+    this.startBtn.on('pointerover', () => {
+      if (!isLocked(this.selectedIndex)) this.startBtn.setColor('#ccffcc')
+    })
+    this.startBtn.on('pointerout', () => this.refresh())
 
-    addPixelText(this, cx, height - 12, 'ESC: volver', {
+    this.hintText = addPixelText(this, cx, height - 18, t('charSelect.hint'), {
       fontSize: '8px',
       color: '#777777',
     }).setOrigin(0.5)
 
     this.refresh()
 
-    this.input.keyboard!.on('keydown-LEFT', () => this.navigate(-1))
-    this.input.keyboard!.on('keydown-RIGHT', () => this.navigate(1))
-    this.input.keyboard!.on('keydown-ENTER', () => this.confirm())
-    this.input.keyboard!.on('keydown-ESC', () => this.scene.start('MenuScene'))
+    bindSceneKeys(this, {
+      'keydown-LEFT': () => this.navigate(-1),
+      'keydown-RIGHT': () => this.navigate(1),
+      'keydown-ENTER': () => this.confirm(),
+      'keydown-ESC': () => this.scene.start('MenuScene'),
+    })
   }
 
   private navigate(dir: number) {
-    const next = (this.selectedIndex + dir + CHARACTERS.length) % CHARACTERS.length
-    this.selectedIndex = next
+    this.selectedIndex =
+      (this.selectedIndex + dir + CHARACTERS.length) % CHARACTERS.length
+    AudioSystem.play('ui')
     this.refresh()
   }
 
   private refresh() {
     const char = CHARACTERS[this.selectedIndex]
-    const locked = isLocked(char)
-    this.nameText.setText(char.name)
-    this.loreText.setText(char.lore)
-    this.lockedText.setText(locked ? 'BLOQUEADO' : '')
-    this.confirmPrompt.setText(locked ? 'Requiere polvo meta (Game Over)' : 'Enter: seleccionar')
+    const locked = isLocked(this.selectedIndex)
+    this.nameText.setText(charName(char.name))
+    this.nameText.setColor('#ffffff')
+    this.loreText.setText(charLore(char.name))
+    this.buffText.setText(`${t('charSelect.buff')}: ${charBuff(char.name)}`)
+    this.handicapText.setText(`${t('charSelect.handicap')}: ${charHandicap(char.name)}`)
+    this.lockedText.setText(locked ? t('charSelect.locked') : '')
+    this.startBtn.setText(locked ? t('charSelect.blocked') : t('charSelect.descend'))
+    this.startBtn.setColor(locked ? '#666666' : '#88cc88')
+    this.hintText.setText(
+      locked ? t('charSelect.hintLocked') : t('charSelect.hint'),
+    )
   }
 
   private confirm() {
     if (this.inputLocked) return
     const char = CHARACTERS[this.selectedIndex]
-    if (isLocked(char)) return
+    if (isLocked(this.selectedIndex)) return
     this.inputLocked = true
+    AudioSystem.unlock()
+    AudioSystem.play('select')
 
     const state = createNewRun(char.name)
+    applyCharacterKit(state, char)
     MetaProgression.applyStartBonuses(state)
-    state.map = generateFloorMap(state.seed, state.floor)
+    applyLoadoutToRun(state)
+    state.floor = MetaProgression.getCampaignFloor()
+    syncRunStateDerived(state)
+    state.map = loadDungeonMap(state.floor)
     const start = state.map.nodes.find(n => n.kind === 'start')
     state.currentNodeId = start?.id ?? null
     SaveSystem.save('quicksave', state)

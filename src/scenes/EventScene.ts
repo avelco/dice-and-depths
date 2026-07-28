@@ -4,39 +4,65 @@ import { SaveSystem } from '../systems/SaveSystem'
 import { addPixelText } from '../ui/pixelText'
 import type { RunState } from '../domain/progression/RunState'
 import { markCurrentNodeCleared } from './MapScene'
+import { t, type TranslationKey } from '../i18n/I18n'
 
-const EVENTS = [
+const EVENTS: {
+  titleKey: TranslationKey
+  choices: { labelKey: TranslationKey; apply: (rs: RunState) => void }[]
+}[] = [
   {
-    title: 'Santuario olvidado',
+    titleKey: 'event.sanctuary.title',
     choices: [
-      { label: 'Rezar (+15% HP)', apply: (rs: RunState) => {
-        rs.hp = Math.min(rs.maxHp, rs.hp + Math.floor(rs.maxHp * 0.15))
-      }},
-      { label: 'Saquear (+12 oro, -3 HP)', apply: (rs: RunState) => {
-        rs.gold += 12
-        rs.hp = Math.max(1, rs.hp - 3)
-      }},
+      {
+        labelKey: 'event.sanctuary.pray',
+        apply: (rs: RunState) => {
+          rs.hp = Math.min(rs.maxHp, rs.hp + Math.floor(rs.maxHp * 0.15))
+        },
+      },
+      {
+        labelKey: 'event.sanctuary.loot',
+        apply: (rs: RunState) => {
+          rs.coins += 12
+          rs.hp = Math.max(1, rs.hp - 3)
+        },
+      },
     ],
   },
   {
-    title: 'Mercader errante',
+    titleKey: 'event.merchant.title',
     choices: [
-      { label: 'Comprar dado ATK (-20g)', apply: (rs: RunState) => {
-        if (rs.gold >= 20) {
-          rs.gold -= 20
-          rs.diceLoadout.atk = Math.min(6, rs.diceLoadout.atk + 1)
-        }
-      }},
-      { label: 'Ignorar (+5 oro)', apply: (rs: RunState) => { rs.gold += 5 }},
+      {
+        labelKey: 'event.merchant.buy',
+        apply: (rs: RunState) => {
+          if (rs.coins >= 20) {
+            rs.coins -= 20
+            rs.diceLoadout.atk = Math.min(6, rs.diceLoadout.atk + 1)
+          }
+        },
+      },
+      {
+        labelKey: 'event.merchant.ignore',
+        apply: (rs: RunState) => {
+          rs.coins += 5
+        },
+      },
     ],
   },
   {
-    title: 'Trampa',
+    titleKey: 'event.trap.title',
     choices: [
-      { label: 'Desactivar (50% -5 HP)', apply: (rs: RunState) => {
-        if (Math.random() < 0.5) rs.hp = Math.max(1, rs.hp - 5)
-      }},
-      { label: 'Huir (+8 oro)', apply: (rs: RunState) => { rs.gold += 8 }},
+      {
+        labelKey: 'event.trap.disarm',
+        apply: (rs: RunState) => {
+          if (Math.random() < 0.5) rs.hp = Math.max(1, rs.hp - 5)
+        },
+      },
+      {
+        labelKey: 'event.trap.flee',
+        apply: (rs: RunState) => {
+          rs.coins += 8
+        },
+      },
     ],
   },
 ]
@@ -46,6 +72,10 @@ export class EventScene extends Phaser.Scene {
 
   constructor() {
     super('EventScene')
+  }
+
+  init() {
+    this.locked = false
   }
 
   create() {
@@ -60,12 +90,12 @@ export class EventScene extends Phaser.Scene {
     renderDebugHeader(this, rs)
     const ev = EVENTS[(rs.floor + (rs.currentNodeId ?? 0)) % EVENTS.length]
 
-    addPixelText(this, cx, 40, ev.title, {
+    addPixelText(this, cx, 40, t(ev.titleKey), {
       fontSize: '10px', color: '#ccaaee', fontStyle: 'bold',
     }).setOrigin(0.5)
 
     ev.choices.forEach((c, i) => {
-      addPixelText(this, cx, 100 + i * 28, `[${i + 1}] ${c.label}`, {
+      addPixelText(this, cx, 100 + i * 28, `[${i + 1}] ${t(c.labelKey)}`, {
         fontSize: '8px', color: '#dddddd',
       }).setOrigin(0.5).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => this.choose(rs, c.apply))

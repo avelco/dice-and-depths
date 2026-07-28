@@ -2,14 +2,21 @@ import Phaser from 'phaser'
 import { getRunState, renderDebugHeader, shopDiscount } from '../debug'
 import { SaveSystem } from '../systems/SaveSystem'
 import { addPixelText } from '../ui/pixelText'
-import { pickRandomPassiveIds, passiveDef } from '../domain/progression/Passives'
+import { pickRandomPassiveIds } from '../domain/progression/Passives'
 import { markCurrentNodeCleared } from './MapScene'
+import { bindSceneKeys } from '../systems/bindSceneKeys'
+import { passiveName, t } from '../i18n/I18n'
+import { enableTouchTarget } from '../ui/touchTarget'
 
 export class ShopScene extends Phaser.Scene {
   private locked = false
 
   constructor() {
     super('ShopScene')
+  }
+
+  init() {
+    this.locked = false
   }
 
   create() {
@@ -24,7 +31,7 @@ export class ShopScene extends Phaser.Scene {
 
     renderDebugHeader(this, rs)
 
-    addPixelText(this, cx, 36, 'TIENDA', {
+    addPixelText(this, cx, 36, t('shop.title'), {
       fontSize: '12px', color: '#ffcc66', fontStyle: 'bold',
     }).setOrigin(0.5)
 
@@ -34,39 +41,44 @@ export class ShopScene extends Phaser.Scene {
 
     const rng = () => Math.random()
     const [pid] = pickRandomPassiveIds(1, rs.passives, rng)
-    const pdef = passiveDef(pid)
 
     const offers = [
-      { label: `Cura 25% HP (${healCost}g)`, cost: healCost, apply: () => {
+      { label: t('shop.heal', { n: healCost }), cost: healCost, apply: () => {
         rs.hp = Math.min(rs.maxHp, rs.hp + Math.floor(rs.maxHp * 0.25))
       }},
-      { label: `+1 reroll DEF (${rerollCost}g)`, cost: rerollCost, apply: () => {
-        rs.rerollMax.def = Math.min(5, rs.rerollMax.def + 1)
+      { label: t('shop.rerollAtk', { n: rerollCost }), cost: rerollCost, apply: () => {
+        rs.rerollMax.atk = Math.min(8, rs.rerollMax.atk + 1)
       }},
-      { label: `${pdef?.name ?? 'Passive'} (${passiveCost}g)`, cost: passiveCost, apply: () => {
+      { label: `${pid ? passiveName(pid) : t('reward.passive')} (${passiveCost}g)`, cost: passiveCost, apply: () => {
         if (pid && !rs.passives.includes(pid)) rs.passives.push(pid)
       }},
     ]
 
     offers.forEach((o, i) => {
       const y = 90 + i * 32
-      addPixelText(this, cx, y, `[${i + 1}] ${o.label}`, {
-        fontSize: '8px', color: rs.gold >= o.cost ? '#dddddd' : '#555555',
-      }).setOrigin(0.5).setInteractive({ useHandCursor: rs.gold >= o.cost })
-        .on('pointerdown', () => this.buy(rs, o.cost, o.apply))
+      const offer = addPixelText(this, cx, y, `[${i + 1}] ${o.label}`, {
+        fontSize: '8px', color: rs.coins >= o.cost ? '#dddddd' : '#555555',
+      }).setOrigin(0.5)
+      if (rs.coins >= o.cost) {
+        enableTouchTarget(offer)
+        offer.on('pointerdown', () => this.buy(rs, o.cost, o.apply))
+      }
     })
 
-    addPixelText(this, cx, 200, '[0] Salir', {
+    const exit = addPixelText(this, cx, 200, t('shop.exit'), {
       fontSize: '8px', color: '#aaaaaa',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.leave(rs))
+    }).setOrigin(0.5)
+    enableTouchTarget(exit)
+    exit.on('pointerdown', () => this.leave(rs))
 
-    this.input.keyboard!.on('keydown-ZERO', () => this.leave(rs))
+    bindSceneKeys(this, {
+      'keydown-ZERO': () => this.leave(rs),
+    })
   }
 
   private buy(rs: import('../domain/progression/RunState').RunState, cost: number, apply: () => void) {
-    if (this.locked || rs.gold < cost) return
-    rs.gold -= cost
+    if (this.locked || rs.coins < cost) return
+    rs.coins -= cost
     apply()
     SaveSystem.save('quicksave', rs)
     this.scene.restart({ runState: rs })

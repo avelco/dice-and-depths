@@ -1,1 +1,23 @@
-[]
+{
+  "affixes": [
+    { "id": "hp_s", "tier": "common", "stat": "maxHp", "value": 2 },
+    { "id": "def_s", "tier": "common", "stat": "defFlat", "value": 1 },
+    { "id": "dmg_s", "tier": "common", "stat": "dmgFlat", "value": 1 },
+    { "id": "souls_s", "tier": "common", "stat": "startGold", "value": 3 },
+
+    { "id": "hp_m", "tier": "blue", "stat": "maxHp", "value": 4 },
+    { "id": "def_m", "tier": "blue", "stat": "defFlat", "value": 2 },
+    { "id": "dmg_m", "tier": "blue", "stat": "dmgFlat", "value": 2 },
+    { "id": "souls_m", "tier": "blue", "stat": "startGold", "value": 8 },
+
+    { "id": "hp_unique", "tier": "purple", "stat": "maxHp", "value": 7 },
+    { "id": "def_unique", "tier": "purple", "stat": "defFlat", "value": 3 },
+    { "id": "dmg_unique", "tier": "purple", "stat": "dmgFlat", "value": 3 },
+    { "id": "reroll_unique", "tier": "purple", "stat": "rerollAtk", "value": 1 },
+
+    { "id": "hp_legend", "tier": "gold", "stat": "maxHp", "value": 10 },
+    { "id": "dmg_legend", "tier": "gold", "stat": "dmgFlat", "value": 4 },
+    { "id": "dice_legend", "tier": "gold", "stat": "diceAtk", "value": 1 },
+    { "id": "souls_legend", "tier": "gold", "stat": "startGold", "value": 20 }
+  ]
+}

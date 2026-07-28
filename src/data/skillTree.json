@@ -1,0 +1,52 @@
+{
+  "nodes": [
+    {
+      "id": "root_lucky",
+      "passiveId": "lucky_roll",
+      "cost": 1,
+      "requires": [],
+      "col": 0,
+      "row": 0
+    },
+    {
+      "id": "root_iron",
+      "passiveId": "iron_skin",
+      "cost": 1,
+      "requires": [],
+      "col": 0,
+      "row": 1
+    },
+    {
+      "id": "root_merc",
+      "passiveId": "merchant_friend",
+      "cost": 1,
+      "requires": [],
+      "col": 0,
+      "row": 2
+    },
+    {
+      "id": "node_heavy",
+      "passiveId": "heavy_hit",
+      "cost": 1,
+      "requires": ["root_lucky"],
+      "col": 1,
+      "row": 0
+    },
+    {
+      "id": "node_vamp",
+      "passiveId": "vampiric",
+      "cost": 1,
+      "requires": ["root_iron"],
+      "col": 1,
+      "row": 1
+    },
+    {
+      "id": "node_wind",
+      "passiveId": "second_wind",
+      "cost": 1,
+      "requires": ["root_iron"],
+      "col": 1,
+      "row": 2
+    }
+  ]
+}

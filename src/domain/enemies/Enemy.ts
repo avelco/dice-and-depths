@@ -32,6 +32,8 @@ export class Enemy {
   hp: number
   defense: number
   skill: EnemySkill
+  atkDiceCount: number
+  rerollMax: number
   turnCount = 0
   bonusDef = 0
 
@@ -41,6 +43,8 @@ export class Enemy {
     hp: number,
     defense: number,
     skill: EnemySkill,
+    atkDiceCount: number,
+    rerollMax: number,
   ) {
     this.templateId = templateId
     this.name = name
@@ -48,6 +52,8 @@ export class Enemy {
     this.hp = hp
     this.defense = defense
     this.skill = skill
+    this.atkDiceCount = atkDiceCount
+    this.rerollMax = rerollMax
   }
 
   get totalDefense(): number {
@@ -72,23 +78,32 @@ export class Enemy {
     const pool = TEMPLATES.filter(t => t.roles.includes(role))
     const tpl = pool[Math.floor(rng() * pool.length)] ?? TEMPLATES[0]
 
-    const scale = kind === 'boss' ? 1.4 : kind === 'elite' ? 1.15 : 1
-    const baseHp = 80 + Math.floor(rng() * 21) // 80–100
-    const hp = Math.floor((baseHp + floor * 2.5) * scale + rng() * 4)
-    const def = Math.floor((tpl.baseDef + floor * 0.8) * scale)
+    const scale = kind === 'boss' ? 1.55 : kind === 'elite' ? 1.15 : 1
+    // Tuned for no-multiplier combat: ~2–3 player hits on floor 1
+    const baseHp = 18 + Math.floor(rng() * 7) // 18–24
+    const hp = Math.floor((baseHp + floor * 4) * scale + rng() * 3)
+    const def = Math.floor((tpl.baseDef + floor * 0.5) * scale)
+    const atkDiceCount = kind === 'boss' ? 3 : kind === 'elite' ? 3 : 2
+    const rerollMax = kind === 'boss' ? 2 : kind === 'elite' ? 2 : 1
 
-    return new Enemy(tpl.id, tpl.name, hp, def, tpl.skill)
+    return new Enemy(tpl.id, tpl.name, hp, def, tpl.skill, atkDiceCount, rerollMax)
   }
 
-  /** Combat/elite: 3–4 foes. Boss: single fight. */
+  /** Most nodes: 2–3 foes. Elite: 2–3. Boss: 1 (tankier). */
   static waveForNode(
     kind: MapNodeKind,
     floor: number,
     seed: number,
   ): Enemy[] {
     const rng = mulberry32(seed + floor * 131 + 17)
-    const count =
-      kind === 'boss' ? 1 : 3 + (rng() < 0.5 ? 0 : 1)
+    let count = 2
+    if (kind === 'boss') {
+      count = 1
+    } else if (kind === 'elite') {
+      count = 2 + (rng() < 0.5 ? 1 : 0)
+    } else {
+      count = 2 + (rng() < 0.55 ? 1 : 0)
+    }
     return Array.from({ length: count }, (_, i) =>
       Enemy.forNode(kind, floor, seed, i),
     )

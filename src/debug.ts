@@ -1,26 +1,27 @@
 import Phaser from 'phaser'
 import { RunState, createNewRun, syncRunStateDerived } from './domain/progression/RunState'
 import { MetaProgression } from './domain/progression/MetaProgression'
-import { generateFloorMap } from './domain/map/FloorGenerator'
+import { loadDungeonMap } from './domain/map/DungeonMap'
 import { addPixelText } from './ui/pixelText'
 
 export function renderDebugHeader(scene: Phaser.Scene, rs: RunState) {
   syncRunStateDerived(rs)
-  const header = `P${rs.floor} | ${rs.characterName} | HP ${rs.hp}/${rs.maxHp} | ${rs.gold}g | D${rs.dice}`
+  const gold = MetaProgression.getGold()
+  const header = `P${rs.floor} | ${rs.characterName} | HP ${rs.hp}/${rs.maxHp} | ${rs.coins}a | ${gold}g | D${rs.dice}`
   addPixelText(scene, 4, 2, header, {
     fontSize: '8px',
     color: '#88ff88',
-  }).setDepth(100)
+  }).setDepth(100).setScrollFactor(0)
 }
 
 export function createDebugState(floor = 5): RunState {
   const state = createNewRun('Guerrero', 42)
   state.floor = floor
-  state.gold = 100 + floor * 30
+  state.coins = 100 + floor * 30
   state.maxHp = 30 + Math.floor(floor * 3)
   state.hp = state.maxHp
   MetaProgression.applyStartBonuses(state)
-  state.map = generateFloorMap(state.seed, state.floor)
+  state.map = loadDungeonMap(state.floor)
   state.currentNodeId = state.map.nodes.find(n => n.kind === 'start')?.id ?? null
   state.pendingNodeKind = 'combat'
   syncRunStateDerived(state)
