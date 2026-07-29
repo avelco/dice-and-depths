@@ -14,6 +14,7 @@ export const es = {
   'tree.hint': 'tocar nodo · [←] menu',
   'tree.locked': 'bloqueado',
   'tree.owned': 'activo',
+  'tree.ownedShort': '*',
   'tree.available': 'disponible',
 
   // Options
@@ -106,7 +107,7 @@ export const es = {
   'fragmentShop.stock': 'Tienes · S{hat} C{cape} Ci{belt} A{ring} B{boots}',
   'fragmentShop.offer': '[{n}] +1 frag {slot} ({cost}a)',
   'fragmentShop.continue': '[0] Continuar',
-  'fragmentShop.hint': '1–5 comprar · 0 continuar',
+  'fragmentShop.hint': '1-5 comprar · 0 continuar',
 
   'slot.hat': 'Sombrero',
   'slot.cape': 'Capa',
@@ -132,7 +133,7 @@ export const es = {
   'reward.rerollAtk': '+1 reroll ATK',
   'reward.passive': 'Pasiva',
   'reward.chestTitle': 'COFRE',
-  'reward.chestHint': 'tocar 1–5 · elige una',
+  'reward.chestHint': 'tocar 1-5 · elige una',
   'reward.chestGear': 'Set: {name}',
   'reward.chestRune': 'Runa: {name}',
   'reward.chestClaim': '[ Reclamar ]',
@@ -141,10 +142,14 @@ export const es = {
 
   // Shop
   'shop.title': 'TIENDA',
+  'shop.postTitle': 'BOTÍN',
+  'shop.soulsGained': '+{n} almas',
+  'shop.almas': 'Almas: {n}',
   'shop.exit': '[0] Salir',
   'shop.diceAtk': '+1 dado ATK ({n}a)',
   'shop.rerollAtk': '+1 reroll ATK ({n}a)',
   'shop.heal': 'Cura 25% HP ({n}a)',
+  'shop.def': '+1 DEF ({n}a)',
 
   // Rest
   'rest.title': 'DESCANSO',
@@ -159,7 +164,7 @@ export const es = {
   'forge.base': 'base',
   'forge.applied': 'Aplicado',
   'forge.pending': 'Pendiente',
-  'forge.none': '—',
+  'forge.none': '-',
   'forge.frags': 'Fragmentos: {n} · costo {cost}',
   'forge.reroll': 'Reroll',
   'forge.apply': 'Aplicar',
@@ -197,7 +202,7 @@ export const es = {
   'passive.heavy_hit.name': 'Golpe pesado',
   'passive.heavy_hit.desc': '+2 daño final',
   'passive.merchant_friend.name': 'Amigo del mercader',
-  'passive.merchant_friend.desc': '−20% precios tienda',
+  'passive.merchant_friend.desc': '-20% precios tienda',
   'passive.second_wind.name': 'Segundo aliento',
   'passive.second_wind.desc': 'Una vez por piso: cura 5 bajo 50% HP',
 

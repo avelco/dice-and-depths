@@ -6,6 +6,7 @@ import { gearDef } from '../domain/items/Equipment'
 import { runeDef } from '../domain/items/Runes'
 import {
   GEAR_SLOTS,
+  RARITY_COLORS,
   RUNE_SLOT_COUNT,
   type GearSlot,
 } from '../domain/items/Item'
@@ -138,12 +139,16 @@ export class InventoryScene extends Phaser.Scene {
     for (const slot of GEAR_SLOTS) {
       const id = meta.loadout.gear[slot]
       const def = id ? gearDef(id) : undefined
-      const label = `${slotLabel(slot)}: ${def ? gearName(def.id) : '—'}`
+      const label = `${slotLabel(slot)}: ${def ? gearName(def.id) : '-'}`
       const selected =
         this.selected?.kind === 'gear' && this.selected.slot === slot
       const txt = addPixelText(this, 12, y, label, {
         fontSize: '8px',
-        color: selected ? '#ffffaa' : id ? '#dddddd' : '#888888',
+        color: selected
+          ? '#ffffaa'
+          : def
+            ? RARITY_COLORS[def.rarity]
+            : '#888888',
       })
       enableTouchTarget(txt)
 
@@ -178,12 +183,16 @@ export class InventoryScene extends Phaser.Scene {
     for (let i = 0; i < RUNE_SLOT_COUNT; i++) {
       const id = meta.loadout.runes[i]
       const def = id ? runeDef(id) : undefined
-      const label = `R${i + 1}: ${def ? runeName(def.id) : '—'}`
+      const label = `R${i + 1}: ${def ? runeName(def.id) : '-'}`
       const selected =
         this.selected?.kind === 'rune' && this.selected.index === i
       const txt = addPixelText(this, 12, y, label, {
         fontSize: '8px',
-        color: selected ? '#ffffaa' : id ? '#dddddd' : '#888888',
+        color: selected
+          ? '#ffffaa'
+          : def
+            ? RARITY_COLORS[def.rarity]
+            : '#888888',
       })
       enableTouchTarget(txt)
 
@@ -221,7 +230,7 @@ export class InventoryScene extends Phaser.Scene {
       for (const entry of bagLines) {
         const txt = addPixelText(this, 260, by, entry.label, {
           fontSize: '8px',
-          color: '#cccccc',
+          color: entry.color,
         })
         enableTouchTarget(txt)
 
@@ -258,6 +267,7 @@ export class InventoryScene extends Phaser.Scene {
 
   private bagEntries(meta: ReturnType<typeof MetaProgression.load>): {
     label: string
+    color: string
     tip: TooltipContent
     equip: () => void
   }[] {
@@ -268,6 +278,7 @@ export class InventoryScene extends Phaser.Scene {
           const def = gearDef(id)
           return {
             label: def ? `${slotLabel(def.slot)} ${gearName(def.id)}` : id,
+            color: def ? RARITY_COLORS[def.rarity] : '#cccccc',
             tip: def
               ? gearTooltipContent({
                   ...def,
@@ -284,6 +295,7 @@ export class InventoryScene extends Phaser.Scene {
           const def = runeDef(id)
           return {
             label: def ? `${t('inv.runeKind')} ${runeName(def.id)}` : id,
+            color: def ? RARITY_COLORS[def.rarity] : '#cccccc',
             tip: def
               ? runeTooltipContent({ ...def, name: runeName(def.id) })
               : { title: id, lines: [] },
@@ -303,6 +315,7 @@ export class InventoryScene extends Phaser.Scene {
           const def = gearDef(id)!
           return {
             label: gearName(def.id),
+            color: RARITY_COLORS[def.rarity],
             tip: gearTooltipContent({
               ...def,
               name: gearName(def.id),
@@ -320,6 +333,7 @@ export class InventoryScene extends Phaser.Scene {
       const def = runeDef(id)
       return {
         label: def ? runeName(def.id) : id,
+        color: def ? RARITY_COLORS[def.rarity] : '#cccccc',
         tip: def ? runeTooltipContent({ ...def, name: runeName(def.id) }) : { title: id, lines: [] },
         equip: () => {
           MetaProgression.equipRune(sel.index, id)

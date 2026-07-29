@@ -49,8 +49,8 @@ export class MenuScene extends Phaser.Scene {
     syncRotateHintLocale()
     const { width } = this.cameras.main
     const cx = width / 2
-    const startY = 100
-    const spacing = 24
+    const startY = 96
+    const spacing = 28
 
     const unlock = () => AudioSystem.unlock()
     this.input.on('pointerdown', unlock)
@@ -79,7 +79,7 @@ export class MenuScene extends Phaser.Scene {
         fontSize: '16px',
         color: '#888888',
       }).setOrigin(0.5)
-      enableTouchTarget(text)
+      enableTouchTarget(text, { min: 24 })
       text.on('pointerover', () => this.select(i))
       text.on('pointerdown', () => this.confirm(i))
       return { label, sceneKey, text }

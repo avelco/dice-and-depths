@@ -21,7 +21,7 @@ export function createDebugState(floor = 5): RunState {
   state.maxHp = 30 + Math.floor(floor * 3)
   state.hp = state.maxHp
   MetaProgression.applyStartBonuses(state)
-  state.map = loadDungeonMap(state.floor)
+  state.map = loadDungeonMap(state.floor, state.seed)
   state.currentNodeId = state.map.nodes.find(n => n.kind === 'start')?.id ?? null
   state.pendingNodeKind = 'combat'
   syncRunStateDerived(state)
@@ -30,10 +30,18 @@ export function createDebugState(floor = 5): RunState {
 
 export interface SceneData {
   runState?: RunState
+  /** After normal/elite combat: open shop sink before returning to map. */
+  postCombat?: boolean
+  /** Souls just granted (display only). */
+  soulsGained?: number
 }
 
 export function getRunState(scene: Phaser.Scene): RunState | undefined {
   return (scene.scene.settings.data as SceneData | undefined)?.runState
+}
+
+export function getSceneData(scene: Phaser.Scene): SceneData {
+  return (scene.scene.settings.data as SceneData | undefined) ?? {}
 }
 
 export function applyPassiveOnKill(state: RunState) {

@@ -3,7 +3,12 @@ import { addPixelText } from '../ui/pixelText'
 import { getRunState, renderDebugHeader } from '../debug'
 import { SaveSystem } from '../systems/SaveSystem'
 import { nodeColor, nodeName, nodeIcon } from '../domain/map/FloorGenerator'
-import { dungeonMapWidth, loadDungeonMap, MAX_CAMPAIGN_FLOOR } from '../domain/map/DungeonMap'
+import {
+  dungeonMapWidth,
+  loadDungeonMap,
+  MAX_CAMPAIGN_FLOOR,
+} from '../domain/map/DungeonMap'
+import { nodesAdjacent } from '../domain/map/MazeGenerator'
 import type { MapNodeKind } from '../domain/map/NodeTypes'
 import type { MapNodeSnapshot, RunState } from '../domain/progression/RunState'
 import { Enemy } from '../domain/enemies/Enemy'
@@ -56,14 +61,14 @@ export class MapScene extends Phaser.Scene {
     this.runState = rs
 
     if (!this.runState.map) {
-      this.runState.map = loadDungeonMap(this.runState.floor)
+      this.runState.map = loadDungeonMap(this.runState.floor, this.runState.seed)
       const start = this.runState.map.nodes.find(n => n.kind === 'start')
       this.runState.currentNodeId = start?.id ?? null
     }
 
     this.nodes = this.runState.map.nodes
     this.edges = this.runState.map.edges
-    this.mapWidth = dungeonMapWidth(this.runState.floor)
+    this.mapWidth = dungeonMapWidth(this.runState.map)
 
     this.cameras.main.setBounds(0, 0, this.mapWidth, height)
     this.centerOnCurrentNode(false)
@@ -178,7 +183,8 @@ export class MapScene extends Phaser.Scene {
     let best: number | null = null
     let bestDist = r * r
     for (const n of this.nodes) {
-      if (!this.isNodeKnown(n)) continue
+      // Only explored or adjacent mystery rooms are targetable / hoverable.
+      if (!this.isExplored(n) && !this.isSensed(n)) continue
       const dx = wx - n.x
       const dy = wy - n.y
       const d = dx * dx + dy * dy
@@ -190,25 +196,37 @@ export class MapScene extends Phaser.Scene {
     return best
   }
 
-  /** Edges appear only after the source node is cleared. */
-  private isEdgeVisible(fromId: number): boolean {
-    const from = this.nodes.find(n => n.id === fromId)
-    return !!from?.cleared
+  /** Visited: start, current, or cleared — full type/exits revealed. */
+  private isExplored(node: MapNodeSnapshot): boolean {
+    return (
+      node.kind === 'start' ||
+      node.cleared ||
+      node.id === this.runState.currentNodeId
+    )
+  }
+
+  /** Adjacent to explored: visible as ??? (type & further exits hidden). */
+  private isSensed(node: MapNodeSnapshot): boolean {
+    if (this.isExplored(node)) return false
+    return this.nodes.some(
+      n => this.isExplored(n) && nodesAdjacent(this.edges, n.id, node.id),
+    )
   }
 
   /**
-   * Nodes stay hidden until you clear a previous node that connects to them
-   * (start / current always known). Prevents planning the whole route upfront.
+   * Stub edges only: explored↔explored, or explored↔sensed.
+   * Hides whether a mystery neighbor is a dead end until you enter it.
    */
-  private isNodeKnown(node: MapNodeSnapshot): boolean {
-    if (node.kind === 'start') return true
-    if (node.cleared) return true
-    if (node.id === this.runState.currentNodeId) return true
-    return this.edges.some(e => {
-      if (e.to !== node.id) return false
-      const from = this.nodes.find(n => n.id === e.from)
-      return !!from?.cleared
-    })
+  private isEdgeVisible(fromId: number, toId: number): boolean {
+    const from = this.nodes.find(n => n.id === fromId)
+    const to = this.nodes.find(n => n.id === toId)
+    if (!from || !to) return false
+    const a = this.isExplored(from)
+    const b = this.isExplored(to)
+    if (a && b) return true
+    if (a && this.isSensed(to)) return true
+    if (b && this.isSensed(from)) return true
+    return false
   }
 
   private redrawMap() {
@@ -217,18 +235,15 @@ export class MapScene extends Phaser.Scene {
     this.fogG.clear()
     this.nodeG.clear()
 
-    this.drawAmbientFog()
-
     for (const edge of this.edges) {
-      if (!this.isEdgeVisible(edge.from)) continue
+      if (!this.isEdgeVisible(edge.from, edge.to)) continue
       const from = this.nodes.find(n => n.id === edge.from)!
       const to = this.nodes.find(n => n.id === edge.to)!
-      if (!this.isNodeKnown(to)) continue
 
       const active =
         curId !== null &&
-        edge.from === curId &&
-        this.isReachable(to)
+        ((edge.from === curId && this.isReachable(to)) ||
+          (edge.to === curId && this.isReachable(from)))
       this.edgeG.lineStyle(active ? 2 : 1, active ? 0x8899aa : 0x445566, active ? 1 : 0.7)
       this.edgeG.beginPath()
       this.edgeG.moveTo(from.x, from.y)
@@ -237,20 +252,33 @@ export class MapScene extends Phaser.Scene {
     }
 
     for (const node of this.nodes) {
-      if (this.isNodeKnown(node)) continue
-      this.drawFogNode(node)
-    }
-
-    for (const node of this.nodes) {
-      const known = this.isNodeKnown(node)
       const label = this.labels.get(node.id)
       const icon = this.icons.get(node.id)
       const fogLabel = this.fogLabels.get(node.id)
+      const explored = this.isExplored(node)
+      const sensed = this.isSensed(node)
 
-      if (!known) {
+      if (!explored && !sensed) {
         label?.setVisible(false)
         icon?.setVisible(false)
-        fogLabel?.setVisible(true).setAlpha(0.55)
+        fogLabel?.setVisible(false)
+        continue
+      }
+
+      if (!explored && sensed) {
+        // Mystery neighbor: no type spoiler, no exit spoiler.
+        label?.setVisible(false)
+        icon?.setVisible(false)
+        fogLabel?.setVisible(true).setAlpha(0.7)
+        this.drawFogNode(node)
+        if (this.isReachable(node)) {
+          this.nodeG.lineStyle(2, 0xeeeeee, 0.9)
+          this.nodeG.strokeCircle(node.x, node.y, NODE_R + 4)
+        }
+        if (node.id === this.hoveredNodeId && this.isReachable(node)) {
+          this.nodeG.lineStyle(2, 0xffffff, 1)
+          this.nodeG.strokeCircle(node.x, node.y, NODE_R + 5)
+        }
         continue
       }
 
@@ -263,8 +291,8 @@ export class MapScene extends Phaser.Scene {
       let color = nodeColor(node.kind)
 
       if (node.id === this.hoveredNodeId && reachable) color = 0xffffff
-      else if (node.id === curId && !cleared) color = 0xffffff
-      if (cleared) color = dimColor(color)
+      else if (node.id === curId) color = 0xffffff
+      else if (cleared) color = dimColor(color)
       else if (!reachable) color = dimColor(color)
 
       const r = node.kind === 'boss' ? NODE_R + 2 : NODE_R
@@ -288,33 +316,6 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
-  private drawAmbientFog() {
-    const unknown = this.nodes.filter(n => !this.isNodeKnown(n))
-    if (unknown.length === 0) return
-
-    for (const node of unknown) {
-      const ox = ((node.id * 37) % 11) - 5
-      const oy = ((node.id * 53) % 9) - 4
-      this.fogG.fillStyle(0x2a2a44, 0.18)
-      this.fogG.fillCircle(node.x + ox, node.y + oy, 22)
-      this.fogG.fillStyle(0x343454, 0.12)
-      this.fogG.fillCircle(node.x - ox * 0.6, node.y + 8, 16)
-    }
-
-    let maxKnownX = 0
-    for (const n of this.nodes) {
-      if (this.isNodeKnown(n)) maxKnownX = Math.max(maxKnownX, n.x)
-    }
-    const { height } = this.cameras.main
-    for (let x = maxKnownX + 28; x < this.mapWidth - 12; x += 36) {
-      for (let y = 48; y < height - 28; y += 40) {
-        const wobble = ((x * 3 + y * 7) % 13) - 6
-        this.fogG.fillStyle(0x22223a, 0.14)
-        this.fogG.fillCircle(x + wobble, y, 20)
-      }
-    }
-  }
-
   private drawFogNode(node: MapNodeSnapshot) {
     const r = NODE_R + 1
     this.fogG.fillStyle(0x3a3a58, 0.28)
@@ -328,17 +329,22 @@ export class MapScene extends Phaser.Scene {
   }
 
   private isReachable(node: MapNodeSnapshot): boolean {
-    if (node.cleared) return false
     if (this.runState.currentNodeId === null) {
       return node.kind === 'start'
     }
     const cur = this.nodes.find(n => n.id === this.runState.currentNodeId)
     if (!cur) return node.kind === 'start'
 
+    // Re-enter current room only if not cleared yet.
     if (node.id === cur.id) return !cur.cleared
+
+    // Must finish current room before leaving (except start, pre-cleared).
     if (!cur.cleared) return false
-    if (node.col <= cur.col) return false
-    return this.edges.some(e => e.from === cur.id && e.to === node.id)
+
+    if (!nodesAdjacent(this.edges, cur.id, node.id)) return false
+
+    // Cleared neighbor: walk back. Uncleared: enter room.
+    return true
   }
 
   private selectNode(node: MapNodeSnapshot) {
@@ -346,6 +352,17 @@ export class MapScene extends Phaser.Scene {
 
     AudioSystem.unlock()
     AudioSystem.play('map')
+
+    // Backtrack / walk onto cleared node: no room scene.
+    if (node.cleared && node.id !== this.runState.currentNodeId) {
+      this.runState.currentNodeId = node.id
+      this.runState.pendingNodeKind = null
+      SaveSystem.save('quicksave', this.runState)
+      this.centerOnCurrentNode(true)
+      this.redrawMap()
+      return
+    }
+
     this.runState.currentNodeId = node.id
     this.runState.pendingNodeKind = node.kind
     SaveSystem.save('quicksave', this.runState)
@@ -358,12 +375,12 @@ export class MapScene extends Phaser.Scene {
   private routeToNode(kind: MapNodeKind) {
     switch (kind) {
       case 'start':
+        // Start is a lobby marker (pre-cleared); should not enter combat.
+        break
       case 'combat':
       case 'elite':
       case 'boss':
-        this.runState.pendingRewardTier = Enemy.tierForKind(
-          kind === 'start' ? 'combat' : kind,
-        )
+        this.runState.pendingRewardTier = Enemy.tierForKind(kind)
         this.scene.start('CombatScene', { runState: this.runState })
         break
       case 'shop':
@@ -400,7 +417,7 @@ export function advanceFloorAfterBoss(state: RunState) {
   if (state.floor > MAX_CAMPAIGN_FLOOR) {
     return 'victory'
   }
-  state.map = loadDungeonMap(state.floor)
+  state.map = loadDungeonMap(state.floor, state.seed)
   const start = state.map.nodes.find(n => n.kind === 'start')
   state.currentNodeId = start?.id ?? null
   return 'continue'

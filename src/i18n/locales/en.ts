@@ -15,6 +15,7 @@ export const en: Record<TranslationKey, string> = {
   'tree.hint': 'tap node · [←] menu',
   'tree.locked': 'locked',
   'tree.owned': 'active',
+  'tree.ownedShort': '*',
   'tree.available': 'available',
 
   'options.title': 'OPTIONS',
@@ -101,7 +102,7 @@ export const en: Record<TranslationKey, string> = {
   'fragmentShop.stock': 'Owned · H{hat} C{cape} Be{belt} R{ring} Bo{boots}',
   'fragmentShop.offer': '[{n}] +1 frag {slot} ({cost}s)',
   'fragmentShop.continue': '[0] Continue',
-  'fragmentShop.hint': '1–5 buy · 0 continue',
+  'fragmentShop.hint': '1-5 buy · 0 continue',
 
   'slot.hat': 'Hat',
   'slot.cape': 'Cape',
@@ -126,7 +127,7 @@ export const en: Record<TranslationKey, string> = {
   'reward.rerollAtk': '+1 ATK reroll',
   'reward.passive': 'Passive',
   'reward.chestTitle': 'CHEST',
-  'reward.chestHint': 'tap 1–5 · pick one',
+  'reward.chestHint': 'tap 1-5 · pick one',
   'reward.chestGear': 'Set: {name}',
   'reward.chestRune': 'Rune: {name}',
   'reward.chestClaim': '[ Claim ]',
@@ -134,10 +135,14 @@ export const en: Record<TranslationKey, string> = {
   'reward.chestDupGold': 'Set: {name} (owned → {n}g)',
 
   'shop.title': 'SHOP',
+  'shop.postTitle': 'LOOT',
+  'shop.soulsGained': '+{n} souls',
+  'shop.almas': 'Souls: {n}',
   'shop.exit': '[0] Leave',
   'shop.diceAtk': '+1 ATK die ({n}s)',
   'shop.rerollAtk': '+1 ATK reroll ({n}s)',
   'shop.heal': 'Heal 25% HP ({n}s)',
+  'shop.def': '+1 DEF ({n}s)',
 
   'rest.title': 'REST',
   'rest.sleep': 'Sleep (heal {n} HP)',
@@ -150,7 +155,7 @@ export const en: Record<TranslationKey, string> = {
   'forge.base': 'base',
   'forge.applied': 'Applied',
   'forge.pending': 'Pending',
-  'forge.none': '—',
+  'forge.none': '-',
   'forge.frags': 'Fragments: {n} · cost {cost}',
   'forge.reroll': 'Reroll',
   'forge.apply': 'Apply',
@@ -185,7 +190,7 @@ export const en: Record<TranslationKey, string> = {
   'passive.heavy_hit.name': 'Heavy Hit',
   'passive.heavy_hit.desc': '+2 final damage',
   'passive.merchant_friend.name': "Merchant's Friend",
-  'passive.merchant_friend.desc': '−20% shop prices',
+  'passive.merchant_friend.desc': '-20% shop prices',
   'passive.second_wind.name': 'Second Wind',
   'passive.second_wind.desc': 'Once per floor: heal 5 under 50% HP',
 

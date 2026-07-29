@@ -55,13 +55,13 @@ export class CharacterSelectScene extends Phaser.Scene {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
-    enableTouchTarget(this.leftArrow)
+    enableTouchTarget(this.leftArrow, { min: 28 })
 
     this.rightArrow = addPixelText(this, cx + 120, height / 2 - 20, '>', {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
-    enableTouchTarget(this.rightArrow)
+    enableTouchTarget(this.rightArrow, { min: 28 })
 
     this.leftArrow.on('pointerdown', () => this.navigate(-1))
     this.rightArrow.on('pointerdown', () => this.navigate(1))
@@ -74,7 +74,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
-    enableTouchTarget(this.nameText)
+    enableTouchTarget(this.nameText, { min: 24 })
     this.nameText.on('pointerdown', () => this.confirm())
     this.nameText.on('pointerover', () => {
       if (!isLocked(this.selectedIndex)) this.nameText.setColor('#ffffcc')
@@ -107,7 +107,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       fontSize: '16px',
       color: '#88cc88',
     }).setOrigin(0.5)
-    enableTouchTarget(this.startBtn)
+    enableTouchTarget(this.startBtn, { min: 28 })
     this.startBtn.on('pointerdown', () => this.confirm())
     this.startBtn.on('pointerover', () => {
       if (!isLocked(this.selectedIndex)) this.startBtn.setColor('#ccffcc')
@@ -166,7 +166,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     applyLoadoutToRun(state)
     state.floor = MetaProgression.getCampaignFloor()
     syncRunStateDerived(state)
-    state.map = loadDungeonMap(state.floor)
+    state.map = loadDungeonMap(state.floor, state.seed)
     const start = state.map.nodes.find(n => n.kind === 'start')
     state.currentNodeId = start?.id ?? null
     SaveSystem.save('quicksave', state)

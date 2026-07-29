@@ -110,7 +110,7 @@ export class FragmentShopScene extends Phaser.Scene {
         color: can ? '#dddddd' : '#555555',
       }).setOrigin(0.5)
       if (can) {
-        enableTouchTarget(txt)
+        enableTouchTarget(txt, { min: 22 })
         txt.on('pointerover', () => txt.setColor('#ffffff'))
         txt.on('pointerout', () => txt.setColor('#dddddd'))
         txt.on('pointerdown', () => this.buy(slot))

@@ -59,7 +59,7 @@ export class OptionsScene extends Phaser.Scene {
       fontSize: '8px',
       color: '#88ccff',
     }).setOrigin(0.5)
-    enableTouchTarget(fsBtn)
+    enableTouchTarget(fsBtn, { min: 28 })
     fsBtn.on('pointerover', () => fsBtn.setColor('#cceeff'))
     fsBtn.on('pointerout', () => fsBtn.setColor('#88ccff'))
     fsBtn.on('pointerdown', () => this.toggleFullscreen(fsBtn))

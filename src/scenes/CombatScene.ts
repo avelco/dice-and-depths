@@ -9,6 +9,7 @@ import { Enemy } from '../domain/enemies/Enemy'
 import { EnemyAI } from '../domain/enemies/EnemyAI'
 import { CombatEngine } from '../domain/combat/CombatEngine'
 import type { RunState } from '../domain/progression/RunState'
+import { rollCombatSouls } from '../domain/progression/CombatRewards'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { charName, enemyName, t } from '../i18n/I18n'
@@ -118,7 +119,7 @@ export class CombatScene extends Phaser.Scene {
     const escTxt = addPixelText(this, width / 2, height - 8, t('combat.esc'), {
       fontSize: '8px', color: '#aaaaaa',
     }).setOrigin(0.5).setDepth(10)
-    enableTouchTarget(escTxt)
+    enableTouchTarget(escTxt, { min: 28 })
     escTxt.on('pointerover', () => escTxt.setColor('#ffffff'))
     escTxt.on('pointerout', () => escTxt.setColor('#aaaaaa'))
     escTxt.on('pointerdown', () =>
@@ -775,7 +776,21 @@ export class CombatScene extends Phaser.Scene {
         koTxt.destroy()
         this.wave.shift()
         if (this.wave.length === 0) {
-          this.scene.start('RewardScene', { runState: this.state })
+          if (this.state.pendingRewardTier === 'boss') {
+            this.scene.start('RewardScene', { runState: this.state })
+            return
+          }
+          const souls = rollCombatSouls(
+            this.state.pendingRewardTier,
+            this.state.floor,
+          )
+          this.state.coins += souls
+          SaveSystem.save('quicksave', this.state)
+          this.scene.start('ShopScene', {
+            runState: this.state,
+            postCombat: true,
+            soulsGained: souls,
+          })
           return
         }
         this.enemy = this.wave[0]

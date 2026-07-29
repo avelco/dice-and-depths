@@ -6,11 +6,14 @@ import { enableTouchTarget } from '../ui/touchTarget'
 import type { RunState, RewardTier } from '../domain/progression/RunState'
 import { pickRandomPassiveIds } from '../domain/progression/Passives'
 import { MetaProgression } from '../domain/progression/MetaProgression'
-import { GEAR, type GearDef } from '../domain/items/Equipment'
+import { GEAR, gearDef, type GearDef } from '../domain/items/Equipment'
+import { RARITY_COLORS } from '../domain/items/Item'
+import { gearForgeTooltipLines } from '../domain/items/forgeTooltip'
 import { markCurrentNodeCleared } from './MapScene'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { gearName, passiveName, t } from '../i18n/I18n'
+import { ItemTooltip, gearTooltipContent } from '../ui/ItemTooltip'
 
 type RewardKind = 'coins' | 'heal' | 'dice_atk' | 'reroll_atk' | 'passive'
 
@@ -204,6 +207,7 @@ export class RewardScene extends Phaser.Scene {
   private createChestUi(cx: number, height: number) {
     this.chestPrizes = buildBossChest(this.state)
     AudioSystem.play('coin')
+    const tooltip = new ItemTooltip(this)
 
     addPixelText(this, cx, 28, t('reward.chestTitle'), {
       fontSize: '16px',
@@ -217,15 +221,34 @@ export class RewardScene extends Phaser.Scene {
 
     this.chestPrizes.forEach((prize, i) => {
       const y = 72 + i * 28
-      const color = prize.duplicate ? '#ffdd88' : '#88ccff'
+      const def = gearDef(prize.gearId)
+      const color = def ? RARITY_COLORS[def.rarity] : '#dddddd'
       const txt = addPixelText(this, cx, y, `[${i + 1}] ${prize.label}`, {
         fontSize: '8px',
         color,
       }).setOrigin(0.5)
-      enableTouchTarget(txt)
-      txt.on('pointerover', () => txt.setColor('#ffffff'))
-      txt.on('pointerout', () => txt.setColor(color))
-      txt.on('pointerdown', () => this.pickChest(i))
+      enableTouchTarget(txt, { min: 24 })
+
+      const tip = def
+        ? gearTooltipContent({
+            ...def,
+            name: gearName(def.id),
+            forgeLines: gearForgeTooltipLines(def.id),
+          })
+        : null
+
+      txt.on('pointerover', () => {
+        txt.setColor('#ffffff')
+        if (tip) tooltip.showAt(txt.x, txt.y, tip)
+      })
+      txt.on('pointerout', () => {
+        txt.setColor(color)
+        tooltip.hide()
+      })
+      txt.on('pointerdown', () => {
+        tooltip.hide()
+        this.pickChest(i)
+      })
     })
 
     addPixelText(this, cx, height - 14, t('reward.chestHint'), {

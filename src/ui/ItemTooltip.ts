@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { addPixelText } from './pixelText'
 import {
   formatMods,
+  RARITY_COLORS,
   type GearSlot,
   type Rarity,
   type StatMod,
@@ -43,11 +44,7 @@ export class ItemTooltip extends Phaser.GameObjects.Container {
     this.clearTexts()
 
     const rarityColor = content.rarity
-      ? content.rarity === 'legendary'
-        ? '#ffcc44'
-        : content.rarity === 'rare'
-          ? '#66aaff'
-          : '#bbbbbb'
+      ? RARITY_COLORS[content.rarity]
       : '#ffffff'
 
     const blocks: { text: string; color: string }[] = [

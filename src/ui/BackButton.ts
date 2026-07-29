@@ -21,7 +21,7 @@ export function addBackButton(
     .setDepth(50)
     .setScrollFactor(0)
 
-  enableTouchTarget(txt)
+  enableTouchTarget(txt, { min: 28 })
   txt.on('pointerover', () => txt.setColor('#ffffff'))
   txt.on('pointerout', () => txt.setColor('#aaaaaa'))
   txt.on('pointerdown', () => {

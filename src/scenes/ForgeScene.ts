@@ -12,7 +12,7 @@ import {
   affixAsMod,
   affixDef,
 } from '../domain/items/Affixes'
-import { formatMod, formatMods } from '../domain/items/Item'
+import { formatMod, formatMods, RARITY_COLORS } from '../domain/items/Item'
 import { gearName, slotLabel, t } from '../i18n/I18n'
 
 export class ForgeScene extends Phaser.Scene {
@@ -97,19 +97,11 @@ export class ForgeScene extends Phaser.Scene {
       const def = gearDef(id)
       if (!def) continue
       const selected = id === this.selectedId
-      const forge = MetaProgression.getForgeState(id)
-      const accent = forge.pendingAffixId
-        ? AFFIX_TIER_COLORS[affixDef(forge.pendingAffixId)?.tier ?? 'common']
-        : forge.appliedAffixId
-          ? AFFIX_TIER_COLORS[affixDef(forge.appliedAffixId)?.tier ?? 'common']
-          : selected
-            ? '#ffffaa'
-            : '#dddddd'
       const label = `${slotLabel(def.slot)} ${gearName(def.id)}`
       const txt = this.addUi(
         addPixelText(this, 12, y, label, {
           fontSize: '8px',
-          color: selected ? '#ffffaa' : accent,
+          color: selected ? '#ffffaa' : RARITY_COLORS[def.rarity],
         }),
       )
       enableTouchTarget(txt)
@@ -138,7 +130,7 @@ export class ForgeScene extends Phaser.Scene {
     this.addUi(
       addPixelText(this, x, y, gearName(def.id), {
         fontSize: '10px',
-        color: '#ffffff',
+        color: RARITY_COLORS[def.rarity],
       }),
     )
     y += 14
@@ -236,7 +228,7 @@ export class ForgeScene extends Phaser.Scene {
       }),
     )
     if (canReroll) {
-      enableTouchTarget(rerollBtn)
+      enableTouchTarget(rerollBtn, { min: 24 })
       rerollBtn.on('pointerdown', () => {
         if (!this.selectedId) return
         const result = MetaProgression.rerollForge(this.selectedId)
@@ -254,7 +246,7 @@ export class ForgeScene extends Phaser.Scene {
       }),
     )
     if (forge.pendingAffixId) {
-      enableTouchTarget(applyBtn)
+      enableTouchTarget(applyBtn, { min: 24 })
       applyBtn.on('pointerdown', () => {
         if (!this.selectedId) return
         if (MetaProgression.applyForge(this.selectedId)) {
