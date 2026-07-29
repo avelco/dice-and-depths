@@ -11,7 +11,7 @@ export class PreloadScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.cameras.main
-    const barW = 240
+    const barW = Math.min(240, width - 40)
     const barH = 16
     const x = (width - barW) / 2
     const y = height / 2 - barH / 2

@@ -10,6 +10,12 @@ export const en: Record<TranslationKey, string> = {
   'menu.hint': 'tap / arrows',
   'menu.gold': 'Gold: {n}',
 
+  'tutorial.tap': 'tap to continue',
+  'tutorial.map.path': 'Tap a glowing node (???) to enter a room',
+  'tutorial.map.fog': 'Exits stay hidden until you enter — dead ends exist; walk back',
+  'tutorial.combat': 'Roll dice, tap [R] to reroll, then ATTACK',
+  'tutorial.souls': 'You earn souls on wins. Spend here or leave — run currency only',
+
   'tree.title': 'PASSIVE TREE',
   'tree.points': 'Points: {n} · earned: {earned}',
   'tree.hint': 'tap node · [←] menu',
@@ -80,6 +86,8 @@ export const en: Record<TranslationKey, string> = {
   'combat.phase': 'PHASE',
   'combat.ko': 'KO!',
   'combat.rerollHint': 'tap die or [R]',
+  'combat.damage': 'DAMAGE',
+  'combat.defense': 'DEFENSE',
 
   'inv.title': 'INVENTORY',
   'inv.bag': 'BAG',

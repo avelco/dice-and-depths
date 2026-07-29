@@ -4,6 +4,7 @@ import { getRunState, renderDebugHeader } from '../debug'
 import { SaveSystem } from '../systems/SaveSystem'
 import { nodeColor, nodeName, nodeIcon } from '../domain/map/FloorGenerator'
 import {
+  dungeonMapHeight,
   dungeonMapWidth,
   loadDungeonMap,
   MAX_CAMPAIGN_FLOOR,
@@ -16,6 +17,7 @@ import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { MetaProgression } from '../domain/progression/MetaProgression'
 import { addBackButton } from '../ui/BackButton'
+import { TutorialBanner } from '../ui/TutorialBanner'
 import { t } from '../i18n/I18n'
 
 const NODE_R = 8
@@ -31,10 +33,14 @@ export class MapScene extends Phaser.Scene {
   private labels = new Map<number, Phaser.GameObjects.Text>()
   private icons = new Map<number, Phaser.GameObjects.Text>()
   private fogLabels = new Map<number, Phaser.GameObjects.Text>()
-  private mapWidth = 480
+  private mapWidth = 270
+  private mapHeight = 480
   private panning = false
   private panMoved = false
   private panLastX = 0
+  private panLastY = 0
+  private tutorial: TutorialBanner | null = null
+  private tutorialBlocked = false
 
   constructor() {
     super('MapScene')
@@ -48,6 +54,9 @@ export class MapScene extends Phaser.Scene {
     this.fogLabels.clear()
     this.panning = false
     this.panMoved = false
+    this.tutorial?.destroy()
+    this.tutorial = null
+    this.tutorialBlocked = false
   }
 
   create() {
@@ -69,8 +78,9 @@ export class MapScene extends Phaser.Scene {
     this.nodes = this.runState.map.nodes
     this.edges = this.runState.map.edges
     this.mapWidth = dungeonMapWidth(this.runState.map)
+    this.mapHeight = dungeonMapHeight(this.runState.map)
 
-    this.cameras.main.setBounds(0, 0, this.mapWidth, height)
+    this.cameras.main.setBounds(0, 0, this.mapWidth, this.mapHeight)
     this.centerOnCurrentNode(false)
 
     renderDebugHeader(this, this.runState)
@@ -117,10 +127,11 @@ export class MapScene extends Phaser.Scene {
       this.panning = true
       this.panMoved = false
       this.panLastX = pointer.x
+      this.panLastY = pointer.y
     })
 
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      if (this.panning && !this.panMoved) {
+      if (this.panning && !this.panMoved && !this.tutorialBlocked) {
         const id = this.hitTest(pointer.worldX, pointer.worldY)
         if (id !== null) {
           const node = this.nodes.find(n => n.id === id)!
@@ -134,9 +145,12 @@ export class MapScene extends Phaser.Scene {
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (this.panning && pointer.isDown) {
         const dx = pointer.x - this.panLastX
-        if (Math.abs(dx) > 2) this.panMoved = true
+        const dy = pointer.y - this.panLastY
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this.panMoved = true
         this.cameras.main.scrollX -= dx
+        this.cameras.main.scrollY -= dy
         this.panLastX = pointer.x
+        this.panLastY = pointer.y
       }
 
       const prev = this.hoveredNodeId
@@ -152,8 +166,28 @@ export class MapScene extends Phaser.Scene {
       'keydown-RIGHT': () => {
         this.cameras.main.scrollX += 40
       },
+      'keydown-UP': () => {
+        this.cameras.main.scrollY -= 40
+      },
+      'keydown-DOWN': () => {
+        this.cameras.main.scrollY += 40
+      },
     })
     SaveSystem.save('quicksave', this.runState)
+    this.maybeStartTutorial()
+  }
+
+  private maybeStartTutorial() {
+    if (MetaProgression.isTutorialDone() || this.runState.floor !== 1) return
+    this.tutorialBlocked = true
+    this.tutorial = new TutorialBanner(this)
+    this.tutorial.show('tutorial.map.path', () => {
+      this.tutorial?.show('tutorial.map.fog', () => {
+        this.tutorialBlocked = false
+        this.tutorial?.destroy()
+        this.tutorial = null
+      })
+    })
   }
 
   private centerOnCurrentNode(smooth: boolean) {
@@ -161,20 +195,27 @@ export class MapScene extends Phaser.Scene {
       ?? this.nodes.find(n => n.kind === 'start')
     if (!cur) return
     const cam = this.cameras.main
-    const target = Phaser.Math.Clamp(
+    const targetX = Phaser.Math.Clamp(
       cur.x - cam.width / 2,
       0,
       Math.max(0, this.mapWidth - cam.width),
     )
+    const targetY = Phaser.Math.Clamp(
+      cur.y - cam.height / 2,
+      0,
+      Math.max(0, this.mapHeight - cam.height),
+    )
     if (smooth) {
       this.tweens.add({
         targets: cam,
-        scrollX: target,
+        scrollX: targetX,
+        scrollY: targetY,
         duration: 220,
         ease: 'Sine.easeOut',
       })
     } else {
-      cam.scrollX = target
+      cam.scrollX = targetX
+      cam.scrollY = targetY
     }
   }
 
@@ -348,6 +389,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private selectNode(node: MapNodeSnapshot) {
+    if (this.tutorialBlocked) return
     if (!this.isReachable(node)) return
 
     AudioSystem.unlock()

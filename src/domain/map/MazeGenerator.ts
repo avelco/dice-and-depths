@@ -4,10 +4,10 @@ import type { MapEdgeSnapshot, MapNodeSnapshot, MapSnapshot } from '../progressi
 
 export const MAX_CAMPAIGN_FLOOR = 5
 
-const PAD_X = 36
-const PAD_Y = 40
-const CELL_W = 56
-const CELL_H = 44
+const PAD_X = 28
+const PAD_Y = 36
+const CELL_W = 42
+const CELL_H = 48
 
 export type RoomKind = Exclude<MapNodeKind, 'start' | 'boss'>
 
@@ -216,15 +216,15 @@ function canReach(
 
 /** Pixel width of a generated map snapshot. */
 export function mapWorldWidth(map: MapSnapshot): number {
-  if (map.nodes.length === 0) return 480
+  if (map.nodes.length === 0) return 270
   const maxX = Math.max(...map.nodes.map(n => n.x))
-  return maxX + PAD_X
+  return Math.max(270, maxX + PAD_X)
 }
 
 export function mapWorldHeight(map: MapSnapshot): number {
-  if (map.nodes.length === 0) return 270
+  if (map.nodes.length === 0) return 480
   const maxY = Math.max(...map.nodes.map(n => n.y))
-  return Math.max(270, maxY + PAD_Y)
+  return Math.max(480, maxY + PAD_Y)
 }
 
 /**
@@ -244,13 +244,14 @@ export function generateDungeonMap(floor: number, seed: number): MapSnapshot {
     )
   }
 
+  // Portrait maze: start at top, boss at bottom.
   const start: Cell = {
-    gx: 0,
-    gy: Math.min(h - 1, Math.max(0, Math.floor(h / 2) + Math.floor(rng() * 3) - 1)),
+    gx: Math.min(w - 1, Math.max(0, Math.floor(w / 2) + Math.floor(rng() * 3) - 1)),
+    gy: 0,
   }
   const boss: Cell = {
-    gx: w - 1,
-    gy: Math.min(h - 1, Math.max(0, Math.floor(h / 2) + Math.floor(rng() * 3) - 1)),
+    gx: Math.min(w - 1, Math.max(0, Math.floor(w / 2) + Math.floor(rng() * 3) - 1)),
+    gy: h - 1,
   }
 
   const cells = pickConnectedCells(w, h, total, start, boss, rng)

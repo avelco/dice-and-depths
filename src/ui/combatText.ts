@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { COMBAT_FONT } from '../config'
 
-/** VT323 reads best at 20px steps on a 480×270 canvas. */
+/** VT323 reads best at 20px steps on a 270×480 canvas. */
 export function snapCombatFontSize(size: string | number | undefined): string {
   const px = typeof size === 'string' ? parseInt(size, 10) : (size ?? 20)
   if (Number.isNaN(px) || px <= 18) return '20px'

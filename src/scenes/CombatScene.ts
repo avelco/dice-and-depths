@@ -5,6 +5,10 @@ import { HealthBar } from '../ui/HealthBar'
 import { DieSprite } from '../ui/DieSprite'
 import { DamageNumbers } from '../ui/DamageNumbers'
 import { addPixelText } from '../ui/pixelText'
+import {
+  CombatPowerCard,
+  formulaTokensFromParts,
+} from '../ui/CombatPowerCard'
 import { Enemy } from '../domain/enemies/Enemy'
 import { EnemyAI } from '../domain/enemies/EnemyAI'
 import { CombatEngine } from '../domain/combat/CombatEngine'
@@ -15,16 +19,23 @@ import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { charName, enemyName, t } from '../i18n/I18n'
 import { enableTouchTarget, minZoneSize } from '../ui/touchTarget'
 import { preferReducedMotion } from '../systems/Device'
+import { MetaProgression } from '../domain/progression/MetaProgression'
+import { TutorialBanner } from '../ui/TutorialBanner'
 
-const DIE_SIZE = 16
-const DIE_GAP = 5
+const DIE_SIZE = 24
+const DIE_GAP = 6
 const DEF_COLOR = 0x4488cc
 const DEF_MAX = 18
-/** Path band Y — kept above HP bars (sectY ≈ 110). */
-const GROUND_Y = 84
-const ENEMY_X_OFFSET = 60
-const QUEUE_STEP_X = 10
-const QUEUE_STEP_Y = -7
+/** Arena: enemy far (small/high), hero near (large/low). Bars sit above heads. */
+const ENEMY_ARENA_Y = 72
+const HERO_ARENA_Y = 158
+const ENEMY_SCALE = 0.7
+const HERO_SCALE = 1.2
+const QUEUE_X = 22
+const QUEUE_STEP_Y = 18
+const ENEMY_BAR_W = 100
+const HERO_BAR_W = 130
+const BAR_H = 9
 
 type DiceGroup = 'atk'
 
@@ -39,27 +50,20 @@ export class CombatScene extends Phaser.Scene {
   private enemyDefBar!: HealthBar
 
   private atkDice: DieSprite[] = []
-  private enemyAtkDice: DieSprite[] = []
 
   private atkRerollBtn!: Phaser.GameObjects.Zone
   private atkRerollTxt!: Phaser.GameObjects.Text
-  private enemyRerollTxt!: Phaser.GameObjects.Text
-  private enemyDmgTxt!: Phaser.GameObjects.Text
-  private enemyComboTxt!: Phaser.GameObjects.Text
-  private enemyLabelTxt!: Phaser.GameObjects.Text
 
   private attackBtnBg!: Phaser.GameObjects.Graphics
   private attackBtnTxt!: Phaser.GameObjects.Text
   private attackBtnZone!: Phaser.GameObjects.Zone
   private attacking = false
-  private dmgPreviewTxt!: Phaser.GameObjects.Text
-  private defPreviewTxt!: Phaser.GameObjects.Text
-  private atkComboTxt!: Phaser.GameObjects.Text
-  private defComboTxt!: Phaser.GameObjects.Text
+  private powerCard!: CombatPowerCard
 
   private heroGfx!: Phaser.GameObjects.Graphics
   private enemyGfx!: Phaser.GameObjects.Graphics
   private enemyNameText!: Phaser.GameObjects.Text
+  private enemyNextDmgTxt!: Phaser.GameObjects.Text
   private queueGfx: Phaser.GameObjects.Graphics[] = []
   private pathGfx!: Phaser.GameObjects.Graphics
   private shakeTimers = new Map<object, Phaser.Time.TimerEvent>()
@@ -70,10 +74,10 @@ export class CombatScene extends Phaser.Scene {
   private btnH = 0
 
   private rerolls = { atk: 4 }
-  private enemyRerollsLeft = 0
-  private enemyDiceX = 390
-  private diceRowY = 214
+  private heroArenaX = 135
+  private enemyArenaX = 135
   private pendingHeroDef = 0
+  private pendingEnemyAtk: number[] = []
   private rerollHintShown = false
   private rerollHintTxt: Phaser.GameObjects.Text | null = null
   private rerollHintTimer: Phaser.Time.TimerEvent | null = null
@@ -84,11 +88,11 @@ export class CombatScene extends Phaser.Scene {
 
   init() {
     this.atkDice = []
-    this.enemyAtkDice = []
     this.wave = []
     this.queueGfx = []
     this.attacking = false
     this.pendingHeroDef = 0
+    this.pendingEnemyAtk = []
     this.rerollHintShown = false
     this.rerollHintTxt = null
     this.rerollHintTimer = null
@@ -132,68 +136,90 @@ export class CombatScene extends Phaser.Scene {
     })
   }
 
-  // ── Section 1: Camino ─────────────────────────────────────
+  // ── Section 1: Camino (vertical, perspectiva) ─────────────
 
   private drawSection1() {
     const { width } = this.cameras.main
-    const groundY = GROUND_Y
-    const enemyX = width - ENEMY_X_OFFSET
+    const cx = width / 2
+    this.heroArenaX = cx
+    this.enemyArenaX = cx
+    const enemyY = ENEMY_ARENA_Y
+    const heroY = HERO_ARENA_Y
 
     const sky = this.add.graphics()
     sky.fillStyle(0x1a1a2e, 1)
-    sky.fillRect(0, 0, width, groundY - 4)
+    sky.fillRect(0, 0, width, heroY + 20)
 
     this.pathGfx = this.add.graphics()
-    this.pathGfx.fillStyle(0x2a2a1e, 1)
-    this.pathGfx.fillRect(0, groundY - 4, width, 4)
-    this.pathGfx.fillStyle(0x1a1a12, 1)
-    this.pathGfx.fillRect(0, groundY, width, 16)
+    this.drawPerspectivePath(cx, enemyY - 4, heroY + 6)
 
-    this.pathGfx.lineStyle(1, 0x333322, 0.5)
-    for (let x = 40; x < width - 40; x += 60) {
-      this.pathGfx.beginPath()
-      this.pathGfx.moveTo(x, groundY)
-      this.pathGfx.lineTo(x, groundY + 6)
-      this.pathGfx.strokePath()
-    }
-
-    this.heroGfx = this.add.graphics()
-    this.drawCharacter(this.heroGfx, 60, groundY - 14, 0x4488cc)
-    addPixelText(this, 60, groundY - 22, charName(this.state.characterName), {
+    this.heroGfx = this.add.graphics().setDepth(3)
+    this.drawCharacter(this.heroGfx, cx, heroY, 0x4488cc, HERO_SCALE)
+    addPixelText(this, cx, heroY - 34 * HERO_SCALE, charName(this.state.characterName), {
       fontSize: '8px', color: '#cceeff',
-    }).setOrigin(0.5)
+    }).setOrigin(0.5).setDepth(4)
 
     this.redrawEnemyQueue()
 
     this.enemyGfx = this.add.graphics()
     this.enemyGfx.setDepth(2)
-    this.drawCharacter(this.enemyGfx, enemyX, groundY - 14, 0xcc4444)
-    this.enemyNameText = addPixelText(this, enemyX, groundY - 22, enemyName(this.enemy.templateId), {
-      fontSize: '8px', color: '#ffcccc',
-    }).setOrigin(0.5).setDepth(2)
+    this.drawCharacter(this.enemyGfx, cx, enemyY, 0xcc4444, ENEMY_SCALE)
+    this.enemyNameText = addPixelText(
+      this, cx, enemyY - 34 * ENEMY_SCALE, enemyName(this.enemy.templateId), {
+        fontSize: '8px', color: '#ffcccc',
+      },
+    ).setOrigin(0.5).setDepth(4)
+
+    this.enemyNextDmgTxt = addPixelText(this, cx + 28, enemyY - 18 * ENEMY_SCALE, '', {
+      fontSize: '16px', color: '#ff8866',
+    }).setOrigin(0, 0.5).setDepth(4)
   }
 
-  /** Upcoming foes stacked behind current: next → last, offset up/right. */
+  /** Trapezoid path: narrow far (enemy) → wide near (hero). */
+  private drawPerspectivePath(cx: number, topY: number, botY: number) {
+    const topHalf = 7
+    const botHalf = 18
+    this.pathGfx.fillStyle(0x2a2a1e, 1)
+    this.pathGfx.beginPath()
+    this.pathGfx.moveTo(cx - topHalf, topY)
+    this.pathGfx.lineTo(cx + topHalf, topY)
+    this.pathGfx.lineTo(cx + botHalf, botY)
+    this.pathGfx.lineTo(cx - botHalf, botY)
+    this.pathGfx.closePath()
+    this.pathGfx.fillPath()
+    this.pathGfx.fillStyle(0x1a1a12, 1)
+    this.pathGfx.fillRect(cx - botHalf - 4, botY, (botHalf + 4) * 2, 8)
+
+    this.pathGfx.lineStyle(1, 0x333322, 0.45)
+    const steps = 5
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps
+      const y = topY + (botY - topY) * t
+      const half = topHalf + (botHalf - topHalf) * t
+      this.pathGfx.beginPath()
+      this.pathGfx.moveTo(cx - half + 2, y)
+      this.pathGfx.lineTo(cx + half - 2, y)
+      this.pathGfx.strokePath()
+    }
+  }
+
+  /** Upcoming foes stacked vertically on the left (smaller = farther). */
   private redrawEnemyQueue() {
     for (const g of this.queueGfx) g.destroy()
     this.queueGfx = []
 
-    const { width } = this.cameras.main
-    const enemyX = width - ENEMY_X_OFFSET
-    const baseY = GROUND_Y - 14
     const upcoming = this.wave.slice(1)
-
-    // Draw last → next so next sits on top of the stack
-    for (let i = upcoming.length - 1; i >= 0; i--) {
-      const step = i + 1
+    for (let i = 0; i < upcoming.length; i++) {
       const g = this.add.graphics()
-      g.setAlpha(0.75 - i * 0.15)
+      g.setAlpha(Math.max(0.35, 0.85 - i * 0.15))
       g.setDepth(1)
+      const scale = Math.max(0.45, ENEMY_SCALE - i * 0.08)
       this.drawCharacter(
         g,
-        enemyX + step * QUEUE_STEP_X,
-        baseY + step * QUEUE_STEP_Y,
+        QUEUE_X,
+        ENEMY_ARENA_Y + 8 + i * QUEUE_STEP_Y,
         0xaa5555,
+        scale,
       )
       this.queueGfx.push(g)
     }
@@ -212,70 +238,63 @@ export class CombatScene extends Phaser.Scene {
     x: number,
     baseY: number,
     color: number,
+    scale = 1,
   ) {
+    const bodyW = 10 * scale
+    const bodyH = 14 * scale
+    const headR = 4 * scale
     g.fillStyle(color, 1)
-    g.fillRoundedRect(x - 5, baseY - 14, 10, 14, 2)
+    g.fillRoundedRect(x - bodyW / 2, baseY - bodyH, bodyW, bodyH, 2 * scale)
     g.fillStyle(color, 0.8)
-    g.fillCircle(x, baseY - 17, 4)
+    g.fillCircle(x, baseY - bodyH - headR * 0.4, headR)
   }
 
-  // ── Section 2: HP + DEF bars + attack ─────────────────────
+  // ── Section 2: enemy bars above head; hero bars below feet ─
 
   private drawSection2() {
-    const { width } = this.cameras.main
-    const sectY = 110
-    const cx = width / 2
-    const barW = 140
-    const barH = 14
+    const cx = this.cameras.main.width / 2
+    const barH = BAR_H
 
-    const hpY = sectY + 4
-    this.heroHpBar = new HealthBar(
-      this, 12, hpY, barW, barH,
-      this.state.maxHp, 0x44aa44, '',
-    )
-    this.heroHpBar.setValue(this.state.hp)
-
+    // Enemy bars above the far fighter
+    const enemyBarX = cx - ENEMY_BAR_W / 2
+    let y = 8
     this.enemyHpBar = new HealthBar(
-      this, width - 152, hpY, barW, barH,
+      this, enemyBarX, y, ENEMY_BAR_W, barH,
       this.enemy.maxHp, 0xcc4444, '',
     )
+    this.enemyHpBar.setDepth(5)
     this.enemyHpBar.setValue(this.enemy.hp)
 
-    const defY = hpY + barH + 6
-    this.heroDefBar = new HealthBar(
-      this, 12, defY, barW, barH, DEF_MAX, DEF_COLOR, '',
-    )
-    this.heroDefBar.setValue(0)
-
+    y += barH + 3
     this.enemyDefBar = new HealthBar(
-      this, width - 152, defY, barW, barH,
+      this, enemyBarX, y, ENEMY_BAR_W, barH,
       Math.max(this.enemy.defense + 4, 8), DEF_COLOR, '',
     )
+    this.enemyDefBar.setDepth(5)
     this.enemyDefBar.setValue(this.enemy.totalDefense)
 
-    // Attack button centered between HP and DEF rows
-    this.btnW = 56
+    // Hero bars where ATACAR used to sit (under the hero)
+    const heroBarX = cx - HERO_BAR_W / 2
+    y = HERO_ARENA_Y + 14
+    this.heroHpBar = new HealthBar(
+      this, heroBarX, y, HERO_BAR_W, barH,
+      this.state.maxHp, 0x44aa44, '',
+    )
+    this.heroHpBar.setDepth(5)
+    this.heroHpBar.setValue(this.state.hp)
+
+    y += barH + 3
+    this.heroDefBar = new HealthBar(
+      this, heroBarX, y, HERO_BAR_W, barH, DEF_MAX, DEF_COLOR, '',
+    )
+    this.heroDefBar.setDepth(5)
+    this.heroDefBar.setValue(0)
+
+    // Attack button is created inside the dice panel (drawSection3).
+    this.btnW = 72
     this.btnH = 18
     this.btnX = cx - this.btnW / 2
-    this.btnY = hpY + (defY + barH - hpY - this.btnH) / 2
-
-    this.attackBtnBg = this.add.graphics()
-    this.redrawAttackBtnDefault()
-
-    this.attackBtnTxt = addPixelText(this, cx, this.btnY + this.btnH / 2, t('combat.attack'), {
-      fontSize: '8px', color: '#ffffff',
-    }).setOrigin(0.5)
-
-    const atkZone = minZoneSize(this.btnW, this.btnH, 28)
-    this.attackBtnZone = this.add
-      .zone(cx, this.btnY + this.btnH / 2, atkZone.w, atkZone.h)
-      .setInteractive({ useHandCursor: true })
-
-    this.attackBtnZone.on('pointerover', () => this.redrawAttackBtnHover())
-    this.attackBtnZone.on('pointerout', () => {
-      if (!this.attacking) this.redrawAttackBtnDefault()
-    })
-    this.attackBtnZone.on('pointerdown', () => this.onAttack())
+    this.btnY = y + barH + 10
   }
 
   private redrawAttackBtnDefault() {
@@ -294,138 +313,99 @@ export class CombatScene extends Phaser.Scene {
     this.attackBtnBg.strokeRoundedRect(this.btnX, this.btnY, this.btnW, this.btnH, 3)
   }
 
-  // ── Section 3: Dice ───────────────────────────────────────
+  // ── Section 3: Panel with ATACAR + compact DAÑO/DEF + dice ──
 
   private drawSection3() {
-    const { width } = this.cameras.main
-    const panelY = 150
-    const panelH = 108
-    const panel = this.add.graphics()
+    const { width, height } = this.cameras.main
+    const cx = width / 2
+    const panelY = this.btnY
+    const panelH = Math.max(150, height - panelY - 16)
+    const panel = this.add.graphics().setDepth(4)
     panel.fillStyle(0x12121c, 0.85)
     panel.fillRoundedRect(8, panelY, width - 16, panelH, 4)
     panel.lineStyle(1, 0x333344, 1)
     panel.strokeRoundedRect(8, panelY, width - 16, panelH, 4)
 
-    // Player dice left, enemy right — DEF comes from ATK combos
-    const PLAYER_X = 140
-    const ENEMY_X = 380
-    this.enemyDiceX = ENEMY_X
+    // ATACAR sits at the top of the card
+    this.btnY = panelY + 6
+    this.btnX = cx - this.btnW / 2
 
-    const statY = 154
-    const breakdownY = 172
-    const labelY = 190
-    const diceRowY = 214
-    const rerollY = 236
-    this.diceRowY = diceRowY
+    this.attackBtnBg = this.add.graphics().setDepth(6)
+    this.redrawAttackBtnDefault()
 
-    this.dmgPreviewTxt = addPixelText(this, PLAYER_X - 40, statY, 'DMG 0', {
-      fontSize: '16px', color: '#ff9999',
-    }).setOrigin(0.5, 0)
+    this.attackBtnTxt = addPixelText(this, cx, this.btnY + this.btnH / 2, t('combat.attack'), {
+      fontSize: '8px', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(6)
 
-    this.defPreviewTxt = addPixelText(this, PLAYER_X + 40, statY, 'DEF 0', {
-      fontSize: '16px', color: '#99ccff',
-    }).setOrigin(0.5, 0)
+    const atkZone = minZoneSize(this.btnW, this.btnH, 28)
+    this.attackBtnZone = this.add
+      .zone(cx, this.btnY + this.btnH / 2, atkZone.w, atkZone.h)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(6)
 
-    this.enemyDmgTxt = addPixelText(this, ENEMY_X, statY, 'DMG -', {
-      fontSize: '16px', color: '#ff8866',
-    }).setOrigin(0.5, 0)
+    this.attackBtnZone.on('pointerover', () => this.redrawAttackBtnHover())
+    this.attackBtnZone.on('pointerout', () => {
+      if (!this.attacking) this.redrawAttackBtnDefault()
+    })
+    this.attackBtnZone.on('pointerdown', () => this.onAttack())
 
-    this.atkComboTxt = addPixelText(this, PLAYER_X - 40, breakdownY, '', {
-      fontSize: '8px', color: '#aa9944',
-    }).setOrigin(0.5, 0)
+    const cardTop = this.btnY + this.btnH + 12
+    this.powerCard = new CombatPowerCard(
+      this,
+      cx,
+      cardTop,
+      width - 32,
+      t('combat.damage'),
+      t('combat.defense'),
+    )
 
-    this.defComboTxt = addPixelText(this, PLAYER_X + 40, breakdownY, '', {
-      fontSize: '8px', color: '#8899bb',
-    }).setOrigin(0.5, 0)
+    const diceRowY = cardTop + CombatPowerCard.HEIGHT + 46
+    const labelY = cardTop + CombatPowerCard.HEIGHT + 8
+    const rerollY = diceRowY + DIE_SIZE + 2
 
-    this.enemyComboTxt = addPixelText(this, ENEMY_X, breakdownY, '', {
-      fontSize: '8px', color: '#aa6644',
-    }).setOrigin(0.5, 0)
+    addPixelText(this, cx, labelY, 'ATK', {
+      fontSize: '8px', color: '#bbbbbb',
+    }).setOrigin(0.5, 0).setDepth(7)
 
     const atkCount = this.state.diceLoadout.atk
-
-    addPixelText(this, PLAYER_X, labelY, 'ATK', {
-      fontSize: '8px', color: '#bbbbbb',
-    }).setOrigin(0.5, 0)
-
-    this.atkDice = this.createDiceRow(PLAYER_X, diceRowY, atkCount)
+    this.atkDice = this.createDiceRow(cx, diceRowY, atkCount)
     this.atkDice.forEach(d => {
+      d.setDepth(6)
+      d.setAlpha(1)
       d.onReroll = () => this.rerollSingleDie(d, 'atk')
     })
 
-    this.atkRerollTxt = addPixelText(this, PLAYER_X, rerollY, `[R] x${this.rerolls.atk}`, {
+    this.atkRerollTxt = addPixelText(this, cx, rerollY, `[R] x${this.rerolls.atk}`, {
       fontSize: '8px', color: '#888888',
-    }).setOrigin(0.5, 0)
+    }).setOrigin(0.5, 0).setDepth(6)
 
     const rZone = minZoneSize(40, 16, 28)
     this.atkRerollBtn = this.add
-      .zone(PLAYER_X, rerollY + 4, rZone.w, rZone.h)
+      .zone(cx, rerollY + 4, rZone.w, rZone.h)
       .setInteractive({ useHandCursor: true })
+      .setDepth(5)
     this.atkRerollBtn.on('pointerdown', () => this.rerollGroup('atk'))
-
-    this.enemyLabelTxt = addPixelText(this, ENEMY_X, labelY, enemyName(this.enemy.templateId), {
-      fontSize: '8px', color: '#ffaa88',
-    }).setOrigin(0.5, 0)
-
-    this.buildEnemyDice()
-    this.enemyRerollsLeft = this.enemy.rerollMax
-    this.enemyRerollTxt = addPixelText(
-      this, ENEMY_X, rerollY, `[R] x${this.enemyRerollsLeft}`, {
-        fontSize: '8px', color: '#886666',
-      },
-    ).setOrigin(0.5, 0)
-    this.setEnemyDiceDimmed(true)
   }
 
-  private buildEnemyDice() {
-    for (const d of this.enemyAtkDice) d.destroy()
-    this.enemyAtkDice = this.createDiceRow(
-      this.enemyDiceX,
-      this.diceRowY,
-      this.enemy.atkDiceCount,
-    )
-    for (const d of this.enemyAtkDice) {
-      d.onReroll = null
-      d.setDiceInteractive(false)
-      d.setValue(1)
+  /** Roll + silent AI rerolls; show next-turn damage beside the enemy. */
+  private precalculateEnemyAttack() {
+    const count = this.enemy.atkDiceCount
+    let values = Array.from({ length: count }, () => Math.floor(Math.random() * 6) + 1)
+    let left = this.enemy.rerollMax
+    while (left > 0) {
+      const idx = EnemyAI.chooseRerollIndex(values)
+      if (idx === null) break
+      values = values.map((v, i) => (i === idx ? Math.floor(Math.random() * 6) + 1 : v))
+      left--
     }
-  }
+    this.pendingEnemyAtk = values
 
-  private setEnemyDiceDimmed(dim: boolean) {
-    const a = dim ? 0.45 : 1
-    for (const d of this.enemyAtkDice) d.setAlpha(a)
-    this.enemyDmgTxt.setAlpha(a)
-    this.enemyComboTxt.setAlpha(a)
-    this.enemyLabelTxt.setAlpha(dim ? 0.55 : 1)
-    this.enemyRerollTxt.setAlpha(dim ? 0.55 : 1)
-    if (dim) {
-      this.enemyDmgTxt.setText('DMG -')
-      this.enemyComboTxt.setText('')
-      this.enemyRerollTxt.setColor('#886666')
-    } else {
-      this.enemyRerollTxt.setColor('#ffccaa')
-    }
-  }
-
-  private updateEnemyPreview() {
-    const vals = this.enemyAtkDice.map(d => d.value)
-    const power = CombatEngine.computePower(vals)
+    const power = CombatEngine.computePower(values)
     let dmg = power.total
     const nextTurn = this.enemy.turnCount + 1
-    const slam = this.enemy.skill === 'slam' && nextTurn % 2 === 0
-    if (slam) dmg *= 2
-
-    this.enemyDmgTxt.setText(`DMG ${dmg}`)
-    const sum = vals.reduce((a, b) => a + b, 0)
-    const parts = [`${sum}`]
-    if (power.combo > 0) parts.push(`+${power.combo}`)
-    if (slam) parts.push('x2')
-    this.enemyComboTxt.setText(parts.length > 1 || slam ? parts.join('') : '')
-  }
-
-  private updateEnemyRerollLabel() {
-    this.enemyRerollTxt.setText(`[R] x${this.enemyRerollsLeft}`)
-    this.enemyRerollTxt.setColor(this.enemyRerollsLeft > 0 ? '#ffccaa' : '#555555')
+    if (this.enemy.skill === 'slam' && nextTurn % 2 === 0) dmg *= 2
+    this.enemyNextDmgTxt.setText(`${dmg}`)
+    this.enemyNextDmgTxt.setAlpha(1)
   }
 
   private createDiceRow(cx: number, y: number, count: number): DieSprite[] {
@@ -448,6 +428,7 @@ export class CombatScene extends Phaser.Scene {
 
     const all = [...this.atkDice]
     if (all.length === 0) {
+      this.precalculateEnemyAttack()
       onDone?.()
       return
     }
@@ -461,6 +442,7 @@ export class CombatScene extends Phaser.Scene {
           done++
           if (done >= all.length) {
             this.updateCombos()
+            this.precalculateEnemyAttack()
             onDone?.()
           }
         })
@@ -516,28 +498,23 @@ export class CombatScene extends Phaser.Scene {
     const defTotal = this.pendingHeroDef + rollDef
     const enemyDef = this.enemy.totalDefense
     const rawDamage = Math.max(1, atk.total - enemyDef)
-    const finalDamage =
-      rawDamage +
-      (this.state.passives.includes('heavy_hit') ? 2 : 0) +
-      this.state.bonusDmgFlat
+    const heavy = this.state.passives.includes('heavy_hit')
+    const finalDamage = rawDamage + (heavy ? 2 : 0) + this.state.bonusDmgFlat
 
     const atkSum = atkVals.reduce((a, b) => a + b, 0)
-
-    this.dmgPreviewTxt.setText(`DMG ${finalDamage}`)
-    this.defPreviewTxt.setText(`DEF ${defTotal}`)
-
     const atkParts = [`${atkSum}`]
     if (atk.combo > 0) atkParts.push(`+${atk.combo}`)
-    if (enemyDef > 0) atkParts.push(`-${enemyDef}`)
+    if (heavy) atkParts.push('+2')
     if (this.state.bonusDmgFlat > 0) atkParts.push(`+${this.state.bonusDmgFlat}`)
-    this.atkComboTxt.setText(atkParts.join(''))
 
     const defParts: string[] = []
     if (this.pendingHeroDef > 0) defParts.push(`${this.pendingHeroDef}`)
     defParts.push(...defInfo.parts)
     if (this.state.passives.includes('iron_skin')) defParts.push('+2')
     if (this.state.bonusDefFlat > 0) defParts.push(`+${this.state.bonusDefFlat}`)
-    this.defComboTxt.setText(defParts.join('+'))
+
+    this.powerCard.setDamage(finalDamage, formulaTokensFromParts(atkParts))
+    this.powerCard.setDefense(defTotal, formulaTokensFromParts(defParts))
   }
 
   private setHeroDef(value: number) {
@@ -606,11 +583,11 @@ export class CombatScene extends Phaser.Scene {
     )
     this.pendingHeroDef = result.defTotal
     this.setHeroDef(result.defTotal)
-    this.defPreviewTxt.setText(`DEF ${result.defTotal}`)
     this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.updatePreviews()
 
-    const enemyX = this.cameras.main.width - ENEMY_X_OFFSET
-    const floatY = 100
+    const enemyX = this.enemyArenaX
+    const floatY = ENEMY_ARENA_Y - 48
 
     if (result.phaseBlocked) {
       AudioSystem.play('block')
@@ -630,7 +607,6 @@ export class CombatScene extends Phaser.Scene {
       this.shakeTarget(this.enemyGfx)
     }
 
-    this.dmgPreviewTxt.setText(`DMG ${result.finalDamage}`)
     this.enemyHpBar.setValue(this.enemy.hp)
 
     if (result.killed) {
@@ -642,57 +618,21 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private runEnemyTurn() {
-    this.setEnemyDiceDimmed(false)
-    this.enemyRerollsLeft = this.enemy.rerollMax
-    this.updateEnemyRerollLabel()
     this.attackBtnTxt.setText(t('combat.enemyTurn'))
     AudioSystem.play('dice')
-
-    const finals = this.enemyAtkDice.map(() => Math.floor(Math.random() * 6) + 1)
-    let done = 0
-    this.enemyAtkDice.forEach((d, i) => {
-      d.roll(finals[i], () => {
-        done++
-        if (done >= this.enemyAtkDice.length) {
-          this.highlightCombos(this.enemyAtkDice)
-          this.updateEnemyPreview()
-          this.time.delayedCall(400, () => this.enemyAiRerollStep())
-        }
-      })
-    })
-  }
-
-  private enemyAiRerollStep() {
-    const values = this.enemyAtkDice.map(d => d.value)
-    const idx =
-      this.enemyRerollsLeft > 0 ? EnemyAI.chooseRerollIndex(values) : null
-
-    if (idx === null) {
-      this.time.delayedCall(350, () => this.resolveEnemyAttack())
-      return
-    }
-
-    this.enemyRerollsLeft--
-    this.updateEnemyRerollLabel()
-    AudioSystem.play('reroll')
-    const next = Math.floor(Math.random() * 6) + 1
-    this.enemyAtkDice[idx].roll(next, () => {
-      this.highlightCombos(this.enemyAtkDice)
-      this.updateEnemyPreview()
-      this.time.delayedCall(350, () => this.enemyAiRerollStep())
-    })
+    this.time.delayedCall(450, () => this.resolveEnemyAttack())
   }
 
   private resolveEnemyAttack() {
-    const atkVals = this.enemyAtkDice.map(d => d.value)
+    const atkVals = this.pendingEnemyAtk
     const eResult = CombatEngine.enemyAttack(
       atkVals,
       this.pendingHeroDef,
       this.enemy,
     )
 
-    const heroX = 60
-    const floatY = 100
+    const heroX = this.heroArenaX
+    const floatY = HERO_ARENA_Y - 56
 
     DamageNumbers.show(
       this,
@@ -710,10 +650,9 @@ export class CombatScene extends Phaser.Scene {
     })
     this.shakeTarget(this.heroGfx)
 
-    // Shield updates first, then HP — never looks like HP before DEF
     this.pendingHeroDef = eResult.remainingDef
     this.setHeroDef(eResult.remainingDef)
-    this.defPreviewTxt.setText(`DEF ${eResult.remainingDef}`)
+    this.updatePreviews()
 
     const applyHp = () => {
       if (eResult.overflow > 0) {
@@ -755,21 +694,20 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private onEnemyKilled() {
-    const { width } = this.cameras.main
-    const enemyRestX = width - ENEMY_X_OFFSET
+    const enemyRestX = this.enemyArenaX
 
     applyPassiveOnKill(this.state)
     SaveSystem.save('quicksave', this.state)
     AudioSystem.play('ko')
 
-    const koTxt = addPixelText(this, enemyRestX, 100, t('combat.ko'), {
+    const koTxt = addPixelText(this, enemyRestX, ENEMY_ARENA_Y - 48, t('combat.ko'), {
       fontSize: '16px', color: '#ffcc44',
     }).setOrigin(0.5).setDepth(50)
 
     this.tweens.add({
-      targets: [this.enemyGfx, this.enemyNameText, koTxt],
+      targets: [this.enemyGfx, this.enemyNameText, this.enemyNextDmgTxt, koTxt],
       alpha: 0,
-      x: '+=24',
+      y: '-=24',
       duration: 320,
       ease: 'Cubic.easeIn',
       onComplete: () => {
@@ -800,39 +738,42 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private spawnNextEnemy() {
-    const { width } = this.cameras.main
-    const enemyX = width - ENEMY_X_OFFSET
-    const baseY = GROUND_Y - 14
+    const enemyX = this.enemyArenaX
+    const baseY = ENEMY_ARENA_Y
 
     this.enemyGfx.clear()
     this.enemyGfx.setAlpha(1)
     this.enemyGfx.setDepth(2)
-    this.enemyGfx.x = 40
-    this.enemyGfx.y = 0
-    this.drawCharacter(this.enemyGfx, enemyX, baseY, 0xcc4444)
+    this.enemyGfx.x = 0
+    this.enemyGfx.y = -24
+    this.drawCharacter(this.enemyGfx, enemyX, baseY, 0xcc4444, ENEMY_SCALE)
 
     this.enemyNameText.setText(enemyName(this.enemy.templateId))
     this.enemyNameText.setAlpha(1)
-    this.enemyNameText.setPosition(enemyX + 40, GROUND_Y - 22)
+    this.enemyNameText.setPosition(enemyX, ENEMY_ARENA_Y - 34 * ENEMY_SCALE - 20)
+
+    this.enemyNextDmgTxt.setAlpha(1)
+    this.enemyNextDmgTxt.setPosition(enemyX + 28, ENEMY_ARENA_Y - 18 * ENEMY_SCALE - 20)
 
     this.bindEnemyBars()
     this.redrawEnemyQueue()
-    this.enemyLabelTxt.setText(enemyName(this.enemy.templateId))
-    this.buildEnemyDice()
-    this.enemyRerollsLeft = this.enemy.rerollMax
-    this.enemyRerollTxt.setText(`[R] x${this.enemyRerollsLeft}`)
-    this.setEnemyDiceDimmed(true)
     this.updatePreviews()
 
     this.tweens.add({
       targets: this.enemyGfx,
-      x: 0,
+      y: 0,
       duration: 280,
       ease: 'Cubic.easeOut',
     })
     this.tweens.add({
       targets: this.enemyNameText,
-      x: enemyX,
+      y: ENEMY_ARENA_Y - 34 * ENEMY_SCALE,
+      duration: 280,
+      ease: 'Cubic.easeOut',
+    })
+    this.tweens.add({
+      targets: this.enemyNextDmgTxt,
+      y: ENEMY_ARENA_Y - 18 * ENEMY_SCALE,
       duration: 280,
       ease: 'Cubic.easeOut',
       onComplete: () => this.resetPlayerTurn(),
@@ -843,9 +784,6 @@ export class CombatScene extends Phaser.Scene {
     this.rerolls = { ...effectiveRerollMax(this.state) }
     this.setHeroDef(this.pendingHeroDef)
     this.enemyDefBar.setValue(this.enemy.totalDefense)
-    this.enemyRerollsLeft = this.enemy.rerollMax
-    this.enemyRerollTxt.setText(`[R] x${this.enemyRerollsLeft}`)
-    this.setEnemyDiceDimmed(true)
     this.preRollAll(() => this.enableAttack())
   }
 
@@ -857,7 +795,15 @@ export class CombatScene extends Phaser.Scene {
     this.setRerollButtonsEnabled(true)
     if (!this.rerollHintShown) {
       this.rerollHintShown = true
-      this.showRerollHint()
+      if (!MetaProgression.isTutorialDone() && this.state.floor === 1) {
+        const tip = new TutorialBanner(this)
+        tip.show('tutorial.combat', () => {
+          tip.destroy()
+          this.showRerollHint()
+        })
+      } else {
+        this.showRerollHint()
+      }
     }
   }
 
@@ -866,7 +812,7 @@ export class CombatScene extends Phaser.Scene {
     this.rerollHintTxt = addPixelText(
       this,
       width / 2,
-      148,
+      this.btnY + this.btnH + 4,
       t('combat.rerollHint'),
       { fontSize: '8px', color: '#ffeeaa' },
     ).setOrigin(0.5).setDepth(30)

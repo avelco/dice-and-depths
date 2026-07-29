@@ -58,6 +58,8 @@ export interface MetaSave {
   fragments: Record<GearSlot, number>
   /** Forge affix state keyed by gear id. */
   gearForge: Record<string, GearForgeState>
+  /** First-run onboarding finished (veterans without flag load as true). */
+  tutorialDone: boolean
 }
 
 const META_KEY = 'dnd_meta_v1'
@@ -165,6 +167,7 @@ function defaultMeta(): MetaSave {
     unlockedTreeNodes: [],
     fragments: emptyFragments(),
     gearForge: {},
+    tutorialDone: false,
   }
 }
 
@@ -256,6 +259,8 @@ export class MetaProgression {
         unlockedTreeNodes: normalizeTreeNodes(data.unlockedTreeNodes),
         fragments: normalizeFragments(data.fragments),
         gearForge: normalizeGearForge(data.gearForge),
+        // Existing saves without the field are treated as already onboarded.
+        tutorialDone: data.tutorialDone === true || data.tutorialDone === undefined,
       }
       setLocale(meta.locale)
       return meta
@@ -315,12 +320,23 @@ export class MetaProgression {
     return true
   }
 
-  static getGold(): number {
-    return MetaProgression.load().gold
-  }
-
   static getCampaignFloor(): number {
     return MetaProgression.load().campaignFloor
+  }
+
+  static isTutorialDone(): boolean {
+    return MetaProgression.load().tutorialDone
+  }
+
+  static completeTutorial() {
+    const meta = MetaProgression.load()
+    if (meta.tutorialDone) return
+    meta.tutorialDone = true
+    MetaProgression.save(meta)
+  }
+
+  static getGold(): number {
+    return MetaProgression.load().gold
   }
 
   /** Unlock next floor after clearing `clearedFloor` (boss beaten). */

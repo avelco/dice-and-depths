@@ -2,36 +2,36 @@
   "floors": [
     {
       "floor": 1,
-      "gridW": 5,
-      "gridH": 4,
+      "gridW": 4,
+      "gridH": 5,
       "rooms": { "combat": 4, "elite": 1, "shop": 1, "rest": 1, "event": 0 },
       "loops": 1
     },
     {
       "floor": 2,
-      "gridW": 6,
-      "gridH": 4,
+      "gridW": 4,
+      "gridH": 6,
       "rooms": { "combat": 5, "elite": 1, "shop": 1, "rest": 1, "event": 1 },
       "loops": 1
     },
     {
       "floor": 3,
-      "gridW": 7,
-      "gridH": 5,
+      "gridW": 5,
+      "gridH": 7,
       "rooms": { "combat": 7, "elite": 2, "shop": 1, "rest": 1, "event": 1 },
       "loops": 2
     },
     {
       "floor": 4,
-      "gridW": 8,
-      "gridH": 5,
+      "gridW": 5,
+      "gridH": 8,
       "rooms": { "combat": 9, "elite": 2, "shop": 1, "rest": 2, "event": 2 },
       "loops": 2
     },
     {
       "floor": 5,
-      "gridW": 9,
-      "gridH": 6,
+      "gridW": 6,
+      "gridH": 9,
       "rooms": { "combat": 11, "elite": 3, "shop": 1, "rest": 2, "event": 2 },
       "loops": 3
     }

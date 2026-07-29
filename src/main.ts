@@ -31,8 +31,8 @@ window.addEventListener('touchstart', unlockAudio, { once: false, passive: true 
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
-  width: 480,
-  height: 270,
+  width: 270,
+  height: 480,
   parent: 'app',
   backgroundColor: '#1a1a2e',
   pixelArt: true,

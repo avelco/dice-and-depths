@@ -14,15 +14,15 @@ import {
 } from '../domain/progression/SkillTree'
 import { passiveDesc, passiveName, t } from '../i18n/I18n'
 
-const PANEL_X = 24
+const PANEL_X = 12
 const PANEL_TOP = 52
-const PANEL_PAD = 20
-const COL_W = 136
-const ROW_H = 54
-const CHIP_W = 120
-const CHIP_H = 34
-const ARROW = 5
-const COST_GUTTER = 14
+const PANEL_PAD = 12
+const COL_W = 72
+const ROW_H = 56
+const CHIP_W = 66
+const CHIP_H = 36
+const ARROW = 4
+const COST_GUTTER = 10
 
 /** Wrap long passive names so they fit the chip. */
 function chipNameLines(name: string): string {
@@ -79,7 +79,7 @@ export class SkillTreeScene extends Phaser.Scene {
     this.statusTxt = addPixelText(this, cx, height - 28, '', {
       fontSize: '8px',
       color: '#aaaaaa',
-      wordWrap: { width: 440 },
+      wordWrap: { width: width - 40 },
       align: 'center',
     }).setOrigin(0.5)
 

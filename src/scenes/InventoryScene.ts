@@ -44,7 +44,7 @@ export class InventoryScene extends Phaser.Scene {
   }
 
   create() {
-    const { width } = this.cameras.main
+    const { width, height } = this.cameras.main
     const cx = width / 2
 
     addPixelText(this, cx, 12, t('inv.title'), {
@@ -55,14 +55,18 @@ export class InventoryScene extends Phaser.Scene {
     this.statsText = addPixelText(this, cx, 28, '', {
       fontSize: '8px',
       color: '#88cc88',
+      wordWrap: { width: width - 40 },
+      align: 'center',
     }).setOrigin(0.5)
 
-    this.fragText = addPixelText(this, cx, 40, '', {
+    this.fragText = addPixelText(this, cx, 48, '', {
       fontSize: '8px',
       color: '#aaddff',
+      wordWrap: { width: width - 40 },
+      align: 'center',
     }).setOrigin(0.5)
 
-    addPixelText(this, cx, 250, t('inv.hint'), {
+    addPixelText(this, cx, height - 12, t('inv.hint'), {
       fontSize: '8px',
       color: '#666666',
     }).setOrigin(0.5)
@@ -135,7 +139,7 @@ export class InventoryScene extends Phaser.Scene {
       }),
     )
 
-    let y = 52
+    let y = 68
     for (const slot of GEAR_SLOTS) {
       const id = meta.loadout.gear[slot]
       const def = id ? gearDef(id) : undefined
@@ -211,24 +215,27 @@ export class InventoryScene extends Phaser.Scene {
       y += 14
     }
 
+    y += 10
     this.bagTexts.push(
-      addPixelText(this, 260, 46, t('inv.bag'), {
+      addPixelText(this, 12, y, t('inv.bag'), {
         fontSize: '8px',
         color: '#aaaaaa',
       }),
     )
+    y += 14
 
     const bagLines = this.bagEntries(meta)
-    let by = 60
+    let by = y
+    const bagBottom = this.cameras.main.height - 40
     if (bagLines.length === 0) {
-      const empty = addPixelText(this, 260, by, t('inv.empty'), {
+      const empty = addPixelText(this, 12, by, t('inv.empty'), {
         fontSize: '8px',
         color: '#555555',
       })
       this.bagTexts.push(empty)
     } else {
       for (const entry of bagLines) {
-        const txt = addPixelText(this, 260, by, entry.label, {
+        const txt = addPixelText(this, 12, by, entry.label, {
           fontSize: '8px',
           color: entry.color,
         })
@@ -243,14 +250,14 @@ export class InventoryScene extends Phaser.Scene {
         })
         this.bagTexts.push(txt)
         by += 12
-        if (by > 230) break
+        if (by > bagBottom) break
       }
     }
 
     if (this.selected) {
       const unequipLabel = this.canUnequip() ? t('inv.unequip') : ''
       if (unequipLabel) {
-        const q = addPixelText(this, 12, 232, unequipLabel, {
+        const q = addPixelText(this, 12, this.cameras.main.height - 28, unequipLabel, {
           fontSize: '8px',
           color: '#ffaaaa',
         })

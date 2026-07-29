@@ -9,6 +9,12 @@ export const es = {
   'menu.hint': 'tocar / flechas',
   'menu.gold': 'Oro: {n}',
 
+  'tutorial.tap': 'tocar para seguir',
+  'tutorial.map.path': 'Toca un nodo brillante (???) para entrar a una sala',
+  'tutorial.map.fog': 'No ves salidas hasta entrar: puede haber callejones — vuelve atras',
+  'tutorial.combat': 'Tira dados, toca [R] para relanzar, luego ATACAR',
+  'tutorial.souls': 'Ganas almas al vencer. Gasta aqui o sal — son solo de esta run',
+
   'tree.title': 'ÁRBOL DE PASIVAS',
   'tree.points': 'Puntos: {n} · ganados: {earned}',
   'tree.hint': 'tocar nodo · [←] menu',
@@ -84,6 +90,8 @@ export const es = {
   'combat.phase': 'FASE',
   'combat.ko': 'KO!',
   'combat.rerollHint': 'tocar dado o [R]',
+  'combat.damage': 'DAÑO',
+  'combat.defense': 'DEFENSA',
 
   // Inventory
   'inv.title': 'INVENTARIO',

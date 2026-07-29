@@ -1,11 +1,8 @@
 import Phaser from 'phaser'
 import { addPixelText } from '../ui/pixelText'
-import { createNewRun, syncRunStateDerived } from '../domain/progression/RunState'
 import { MetaProgression } from '../domain/progression/MetaProgression'
-import { applyLoadoutToRun } from '../domain/progression/Loadout'
-import { CHARACTERS, applyCharacterKit } from '../domain/progression/Characters'
-import { loadDungeonMap } from '../domain/map/DungeonMap'
-import { SaveSystem } from '../systems/SaveSystem'
+import { CHARACTERS } from '../domain/progression/Characters'
+import { startCampaignRun } from '../domain/progression/startRun'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { charBuff, charHandicap, charLore, charName, t } from '../i18n/I18n'
@@ -51,13 +48,13 @@ export class CharacterSelectScene extends Phaser.Scene {
       color: '#ffffff',
     }).setOrigin(0.5)
 
-    this.leftArrow = addPixelText(this, cx - 120, height / 2 - 20, '<', {
+    this.leftArrow = addPixelText(this, cx - 80, height / 2 - 20, '<', {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
     enableTouchTarget(this.leftArrow, { min: 28 })
 
-    this.rightArrow = addPixelText(this, cx + 120, height / 2 - 20, '>', {
+    this.rightArrow = addPixelText(this, cx + 80, height / 2 - 20, '>', {
       fontSize: '16px',
       color: '#ffffff',
     }).setOrigin(0.5)
@@ -84,7 +81,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.loreText = addPixelText(this, cx, height / 2 - 14, '', {
       fontSize: '8px',
       color: '#aaaaaa',
-      wordWrap: { width: 260 },
+      wordWrap: { width: width - 40 },
       align: 'center',
     }).setOrigin(0.5)
 
@@ -160,17 +157,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     AudioSystem.unlock()
     AudioSystem.play('select')
 
-    const state = createNewRun(char.name)
-    applyCharacterKit(state, char)
-    MetaProgression.applyStartBonuses(state)
-    applyLoadoutToRun(state)
-    state.floor = MetaProgression.getCampaignFloor()
-    syncRunStateDerived(state)
-    state.map = loadDungeonMap(state.floor, state.seed)
-    const start = state.map.nodes.find(n => n.kind === 'start')
-    state.currentNodeId = start?.id ?? null
-    SaveSystem.save('quicksave', state)
-
+    const state = startCampaignRun(char.name)
     this.time.delayedCall(150, () => this.scene.start('MapScene', { runState: state }))
   }
 }

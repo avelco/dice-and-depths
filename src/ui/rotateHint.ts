@@ -1,7 +1,7 @@
 import { getLocale } from '../i18n/I18n'
 
-const ROTATE_ES = 'Gira el dispositivo a horizontal'
-const ROTATE_EN = 'Rotate your device to landscape'
+const ROTATE_ES = 'Gira el dispositivo a vertical'
+const ROTATE_EN = 'Rotate your device to portrait'
 
 /** Sync the HTML rotate overlay copy with the active locale. */
 export function syncRotateHintLocale() {

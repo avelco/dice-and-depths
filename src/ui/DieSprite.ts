@@ -24,7 +24,10 @@ export class DieSprite extends Phaser.GameObjects.Container {
 
     const dieStyle = uiFont === 'combat'
       ? combatTextStyle({ fontSize: '20px', color: '#ffffff' })
-      : pixelTextStyle({ fontSize: '8px', color: '#ffffff' })
+      : pixelTextStyle({
+          fontSize: size >= 20 ? '16px' : '8px',
+          color: '#ffffff',
+        })
     this.label = scene.add.text(0, 0, '1', dieStyle)
     this.label.setOrigin(0.5)
     if (uiFont === 'combat') applyCombatTextSharpness(this.label)
@@ -48,7 +51,7 @@ export class DieSprite extends Phaser.GameObjects.Container {
   setValue(v: number) {
     this._value = v
     this.label.setText(String(v))
-    this.redraw(0x333333)
+    this.redraw(0x3a3a4a)
   }
 
   setDiceInteractive(on: boolean) {
@@ -61,7 +64,7 @@ export class DieSprite extends Phaser.GameObjects.Container {
 
   setComboBorder(color: number | null) {
     this.comboColor = color
-    this.redraw(0x333333)
+    this.redraw(0x3a3a4a)
   }
 
   roll(finalValue: number, onComplete?: () => void) {
@@ -99,7 +102,7 @@ export class DieSprite extends Phaser.GameObjects.Container {
   }
 
   highlight(on: boolean) {
-    this.redraw(on ? 0x555555 : 0x333333)
+    this.redraw(on ? 0x555566 : 0x3a3a4a)
   }
 
   private redraw(bgColor: number) {
@@ -112,7 +115,7 @@ export class DieSprite extends Phaser.GameObjects.Container {
       this._size,
       2,
     )
-    const border = this.comboColor ?? 0x666666
+    const border = this.comboColor ?? 0x999999
     this.bg.lineStyle(this.comboColor ? 2 : 1, border, 1)
     this.bg.strokeRoundedRect(
       -this._size / 2,

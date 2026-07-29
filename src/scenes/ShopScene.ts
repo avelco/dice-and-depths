@@ -10,6 +10,8 @@ import { enableTouchTarget } from '../ui/touchTarget'
 import type { RunState } from '../domain/progression/RunState'
 import { syncRunStateDerived } from '../domain/progression/RunState'
 import { AudioSystem } from '../systems/AudioSystem'
+import { MetaProgression } from '../domain/progression/MetaProgression'
+import { TutorialBanner } from '../ui/TutorialBanner'
 
 interface ShopOffer {
   label: string
@@ -32,7 +34,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   create() {
-    const { width } = this.cameras.main
+    const { width, height } = this.cameras.main
     const cx = width / 2
     const data = getSceneData(this)
     const rs = getRunState(this)
@@ -74,6 +76,8 @@ export class ShopScene extends Phaser.Scene {
       const offer = addPixelText(this, cx, y, `[${i + 1}] ${o.label}`, {
         fontSize: '8px',
         color: canBuy ? '#dddddd' : '#555555',
+        wordWrap: { width: width - 40 },
+        align: 'center',
       }).setOrigin(0.5)
       if (canBuy) {
         enableTouchTarget(offer, { min: 24 })
@@ -81,7 +85,7 @@ export class ShopScene extends Phaser.Scene {
       }
     })
 
-    const exit = addPixelText(this, cx, 232, t('shop.exit'), {
+    const exit = addPixelText(this, cx, height - 28, t('shop.exit'), {
       fontSize: '8px',
       color: '#aaaaaa',
     }).setOrigin(0.5)
@@ -99,6 +103,14 @@ export class ShopScene extends Phaser.Scene {
       }
     })
     bindSceneKeys(this, keys)
+
+    if (this.postCombat && !MetaProgression.isTutorialDone()) {
+      const tip = new TutorialBanner(this)
+      tip.show('tutorial.souls', () => {
+        MetaProgression.completeTutorial()
+        tip.destroy()
+      })
+    }
   }
 
   private postCombatOffers(rs: RunState, disc: number): ShopOffer[] {

@@ -19,7 +19,7 @@ export class OptionsScene extends Phaser.Scene {
   create() {
     MetaProgression.load()
     syncRotateHintLocale()
-    const { width } = this.cameras.main
+    const { width, height } = this.cameras.main
     const cx = width / 2
 
     const goMenu = () => {
@@ -64,7 +64,7 @@ export class OptionsScene extends Phaser.Scene {
     fsBtn.on('pointerout', () => fsBtn.setColor('#88ccff'))
     fsBtn.on('pointerdown', () => this.toggleFullscreen(fsBtn))
 
-    addPixelText(this, cx, 250, t('options.hint'), {
+    addPixelText(this, cx, height - 12, t('options.hint'), {
       fontSize: '8px',
       color: '#666666',
     }).setOrigin(0.5)

@@ -72,7 +72,7 @@ export class ForgeScene extends Phaser.Scene {
 
     if (owned.length === 0) {
       this.addUi(
-        addPixelText(this, 240, 120, t('forge.empty'), {
+        addPixelText(this, this.cameras.main.width / 2, 120, t('forge.empty'), {
           fontSize: '8px',
           color: '#888888',
         }).setOrigin(0.5),
@@ -93,6 +93,7 @@ export class ForgeScene extends Phaser.Scene {
     )
     y += 14
 
+    const listBottom = 200
     for (const id of owned) {
       const def = gearDef(id)
       if (!def) continue
@@ -111,6 +112,7 @@ export class ForgeScene extends Phaser.Scene {
         this.refresh()
       })
       y += 13
+      if (y > listBottom) break
     }
 
     this.drawDetail(meta)
@@ -124,8 +126,10 @@ export class ForgeScene extends Phaser.Scene {
 
     const forge = MetaProgression.getForgeState(id)
     const frags = meta.fragments[def.slot] ?? 0
-    const x = 200
-    let y = 36
+    const x = 12
+    let y = 220
+    const { width, height } = this.cameras.main
+    const cx = width / 2
 
     this.addUi(
       addPixelText(this, x, y, gearName(def.id), {
@@ -240,7 +244,7 @@ export class ForgeScene extends Phaser.Scene {
     }
 
     const applyBtn = this.addUi(
-      addPixelText(this, x + 90, y, t('forge.apply'), {
+      addPixelText(this, x + 100, y, t('forge.apply'), {
         fontSize: '10px',
         color: forge.pendingAffixId ? '#66aaff' : '#555555',
       }),
@@ -257,7 +261,7 @@ export class ForgeScene extends Phaser.Scene {
     }
 
     this.addUi(
-      addPixelText(this, 240, 252, t('forge.hint'), {
+      addPixelText(this, cx, height - 12, t('forge.hint'), {
         fontSize: '8px',
         color: '#666666',
       }).setOrigin(0.5),

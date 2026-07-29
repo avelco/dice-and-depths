@@ -2,7 +2,9 @@ import Phaser from 'phaser'
 import { addPixelText } from '../ui/pixelText'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
+import { startCampaignRun } from '../domain/progression/startRun'
 import { MetaProgression } from '../domain/progression/MetaProgression'
+import { SaveSystem } from '../systems/SaveSystem'
 import { t } from '../i18n/I18n'
 import { enableTouchTarget } from '../ui/touchTarget'
 import { syncRotateHintLocale } from '../ui/rotateHint'
@@ -30,7 +32,6 @@ interface MenuItem {
 
 export class MenuScene extends Phaser.Scene {
   private items: MenuItem[] = []
-  private cursor!: Phaser.GameObjects.Text
   private selectedIndex = 0
   private inputLocked = false
 
@@ -47,7 +48,19 @@ export class MenuScene extends Phaser.Scene {
   create() {
     MetaProgression.load()
     syncRotateHintLocale()
-    const { width } = this.cameras.main
+
+    // Brand-new players: skip hub and drop into floor 1 as Guerrero.
+    if (!MetaProgression.isTutorialDone()) {
+      const existing = SaveSystem.load('quicksave')
+      const state =
+        existing && existing.floor === 1
+          ? existing
+          : startCampaignRun('Guerrero', 1)
+      this.scene.start('MapScene', { runState: state })
+      return
+    }
+
+    const { width, height } = this.cameras.main
     const cx = width / 2
     const startY = 96
     const spacing = 28
@@ -85,14 +98,9 @@ export class MenuScene extends Phaser.Scene {
       return { label, sceneKey, text }
     })
 
-    this.cursor = addPixelText(this, cx - 80, startY, '>', {
-      fontSize: '16px',
-      color: '#ffffff',
-    }).setOrigin(0.5)
-
     this.select(0)
 
-    addPixelText(this, cx, 250, t('menu.hint'), {
+    addPixelText(this, cx, height - 12, t('menu.hint'), {
       fontSize: '8px',
       color: '#666666',
     }).setOrigin(0.5)
@@ -127,16 +135,13 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private select(index: number) {
-    if (index === this.selectedIndex) return
+    const changing = index !== this.selectedIndex
     const prev = this.items[this.selectedIndex]
-    if (prev) prev.text.setColor('#888888')
+    if (prev && changing) prev.text.setColor('#888888')
     this.selectedIndex = index
     const next = this.items[index]
-    if (next) {
-      next.text.setColor('#ffffff')
-      this.cursor.setY(next.text.y)
-    }
-    AudioSystem.play('ui')
+    if (next) next.text.setColor('#ffffff')
+    if (changing) AudioSystem.play('ui')
   }
 
   private confirm(index: number) {
