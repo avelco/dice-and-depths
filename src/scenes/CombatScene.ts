@@ -11,12 +11,12 @@ import {
 } from '../ui/CombatPowerCard'
 import { Enemy } from '../domain/enemies/Enemy'
 import { EnemyAI } from '../domain/enemies/EnemyAI'
-import { CombatEngine } from '../domain/combat/CombatEngine'
+import { CombatEngine, type ComboCalloutKey } from '../domain/combat/CombatEngine'
 import type { RunState } from '../domain/progression/RunState'
 import { rollCombatSouls } from '../domain/progression/CombatRewards'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
-import { charName, enemyName, t } from '../i18n/I18n'
+import { charName, enemyName, t, type TranslationKey } from '../i18n/I18n'
 import { enableTouchTarget, minZoneSize } from '../ui/touchTarget'
 import { preferReducedMotion } from '../systems/Device'
 import { MetaProgression } from '../domain/progression/MetaProgression'
@@ -36,8 +36,43 @@ const QUEUE_STEP_Y = 18
 const ENEMY_BAR_W = 100
 const HERO_BAR_W = 130
 const BAR_H = 9
+const DODGE_CHANCE = 0.01
 
 type DiceGroup = 'atk'
+
+/** h: 0–360, s/v: 0–1 → 0xRRGGBB */
+function hsvToRgb(h: number, s: number, v: number): number {
+  const c = v * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = v - c
+  let r = 0
+  let g = 0
+  let b = 0
+  if (h < 60) { r = c; g = x }
+  else if (h < 120) { r = x; g = c }
+  else if (h < 180) { g = c; b = x }
+  else if (h < 240) { g = x; b = c }
+  else if (h < 300) { r = x; b = c }
+  else { r = c; b = x }
+  const R = Math.round((r + m) * 255)
+  const G = Math.round((g + m) * 255)
+  const B = Math.round((b + m) * 255)
+  return (R << 16) | (G << 8) | B
+}
+
+function comboSfx(key: ComboCalloutKey): Parameters<typeof AudioSystem.play>[0] {
+  switch (key) {
+    case 'combat.combo.awesome': return 'combo2'
+    case 'combat.combo.triple': return 'combo3'
+    case 'combat.combo.super': return 'combo4'
+    case 'combat.combo.hyper': return 'combo5'
+    case 'combat.combo.brutal': return 'combo6'
+    case 'combat.combo.master': return 'combo7'
+    case 'combat.combo.killer': return 'combo8'
+    case 'combat.combo.king': return 'combo9'
+    case 'combat.combo.monster': return 'comboMonster'
+  }
+}
 
 export class CombatScene extends Phaser.Scene {
   private state!: RunState
@@ -67,6 +102,7 @@ export class CombatScene extends Phaser.Scene {
   private queueGfx: Phaser.GameObjects.Graphics[] = []
   private pathGfx!: Phaser.GameObjects.Graphics
   private shakeTimers = new Map<object, Phaser.Time.TimerEvent>()
+  private shakeRests = new Map<object, { x: number; y: number }>()
 
   private btnX = 0
   private btnY = 0
@@ -74,6 +110,8 @@ export class CombatScene extends Phaser.Scene {
   private btnH = 0
 
   private rerolls = { atk: 4 }
+  private rerollsSpentThisTurn = 0
+  private freeRerollAvailable = false
   private heroArenaX = 135
   private enemyArenaX = 135
   private pendingHeroDef = 0
@@ -81,6 +119,11 @@ export class CombatScene extends Phaser.Scene {
   private rerollHintShown = false
   private rerollHintTxt: Phaser.GameObjects.Text | null = null
   private rerollHintTimer: Phaser.Time.TimerEvent | null = null
+  private lastCalloutKey: ComboCalloutKey | null = null
+  private calloutTxt: Phaser.GameObjects.Text | null = null
+  private diceRowY = 0
+  private rainbowTimer: Phaser.Time.TimerEvent | null = null
+  private rainbowHue = 0
 
   constructor() {
     super('CombatScene')
@@ -91,12 +134,21 @@ export class CombatScene extends Phaser.Scene {
     this.wave = []
     this.queueGfx = []
     this.attacking = false
+    this.rerollsSpentThisTurn = 0
+    this.freeRerollAvailable = false
     this.pendingHeroDef = 0
     this.pendingEnemyAtk = []
     this.rerollHintShown = false
     this.rerollHintTxt = null
     this.rerollHintTimer = null
+    this.lastCalloutKey = null
+    this.calloutTxt = null
+    this.diceRowY = 0
+    this.rainbowTimer?.remove(false)
+    this.rainbowTimer = null
+    this.rainbowHue = 0
     this.shakeTimers.clear()
+    this.shakeRests.clear()
     this.children.removeAll(true)
   }
 
@@ -114,6 +166,8 @@ export class CombatScene extends Phaser.Scene {
     this.wave = Enemy.waveForNode(kind, this.state.floor, this.state.seed)
     this.enemy = this.wave[0]
     this.rerolls = { ...effectiveRerollMax(this.state) }
+    this.rerollsSpentThisTurn = 0
+    this.freeRerollAvailable = this.state.characterName === 'Pícaro'
 
     this.drawSection1()
     this.drawSection2()
@@ -359,16 +413,16 @@ export class CombatScene extends Phaser.Scene {
       t('combat.defense'),
     )
 
-    const diceRowY = cardTop + CombatPowerCard.HEIGHT + 46
+    this.diceRowY = cardTop + CombatPowerCard.HEIGHT + 46
     const labelY = cardTop + CombatPowerCard.HEIGHT + 8
-    const rerollY = diceRowY + DIE_SIZE + 2
+    const rerollY = this.diceRowY + DIE_SIZE + 2
 
     addPixelText(this, cx, labelY, 'ATK', {
       fontSize: '8px', color: '#bbbbbb',
     }).setOrigin(0.5, 0).setDepth(7)
 
     const atkCount = this.state.diceLoadout.atk
-    this.atkDice = this.createDiceRow(cx, diceRowY, atkCount)
+    this.atkDice = this.createDiceRow(cx, this.diceRowY, atkCount)
     this.atkDice.forEach(d => {
       d.setDepth(6)
       d.setAlpha(1)
@@ -450,14 +504,27 @@ export class CombatScene extends Phaser.Scene {
     })
   }
 
+  /** Spend a reroll charge, or the Pícaro free first reroll. */
+  private trySpendReroll(group: DiceGroup): boolean {
+    if (this.freeRerollAvailable) {
+      this.freeRerollAvailable = false
+      this.rerollsSpentThisTurn++
+      return true
+    }
+    if (this.rerolls[group] <= 0) return false
+    this.rerolls[group]--
+    this.rerollsSpentThisTurn++
+    return true
+  }
+
   private rerollGroup(group: DiceGroup) {
     if (this.attacking) return
-    const r = this.rerolls[group]
-    if (r <= 0) return
+    if (!this.trySpendReroll(group)) return
 
+    this.stopRainbowBorders()
     this.dismissRerollHint()
-    this.rerolls[group]--
     this.updateRerollLabels()
+    this.updatePreviews()
     AudioSystem.play('reroll')
 
     const dice = this.atkDice
@@ -473,11 +540,12 @@ export class CombatScene extends Phaser.Scene {
 
   private rerollSingleDie(die: DieSprite, group: DiceGroup) {
     if (this.attacking) return
-    if (this.rerolls[group] <= 0) return
+    if (!this.trySpendReroll(group)) return
 
+    this.stopRainbowBorders()
     this.dismissRerollHint()
-    this.rerolls[group]--
     this.updateRerollLabels()
+    this.updatePreviews()
     AudioSystem.play('reroll')
 
     const finalValue = Math.floor(Math.random() * 6) + 1
@@ -487,13 +555,76 @@ export class CombatScene extends Phaser.Scene {
   private updateCombos() {
     this.highlightCombos(this.atkDice)
     this.updatePreviews()
+    this.maybeShowComboCallout()
+  }
+
+  private maybeShowComboCallout() {
+    const vals = this.atkDice.map(d => d.value)
+    const tier = CombatEngine.comboTier(vals)
+    if (!tier.calloutKey) {
+      this.lastCalloutKey = null
+      return
+    }
+    if (tier.calloutKey === this.lastCalloutKey) return
+    this.lastCalloutKey = tier.calloutKey
+    this.showComboCallout(tier.calloutKey, tier.bestMatch, tier.isMonster)
+  }
+
+  private showComboCallout(
+    key: ComboCalloutKey,
+    bestMatch: number,
+    isMonster: boolean,
+  ) {
+    this.calloutTxt?.destroy()
+    const { width } = this.cameras.main
+    const intensity = isMonster ? 7 : Math.min(6, 2 + bestMatch)
+    // Sit just above the dice row.
+    const calloutY = this.diceRowY - DIE_SIZE / 2 - 10
+    const txt = addPixelText(
+      this,
+      width / 2,
+      calloutY,
+      t(key as TranslationKey),
+      { fontSize: '16px', color: isMonster ? '#ffcc44' : '#ffeeaa' },
+    ).setOrigin(0.5).setDepth(60).setAlpha(0)
+
+    this.calloutTxt = txt
+    AudioSystem.play(comboSfx(key))
+
+    for (const d of this.atkDice) this.shakeTarget(d, intensity, 280)
+
+    this.tweens.add({
+      targets: txt,
+      alpha: 1,
+      y: calloutY - 6,
+      duration: 220,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: txt,
+          alpha: 0,
+          y: txt.y - 8,
+          delay: 900,
+          duration: 320,
+          onComplete: () => {
+            txt.destroy()
+            if (this.calloutTxt === txt) this.calloutTxt = null
+          },
+        })
+      },
+    })
   }
 
   private updatePreviews() {
     const atkVals = this.atkDice.map(d => d.value)
 
-    const atk = CombatEngine.computePower(atkVals)
-    const defInfo = CombatEngine.computeDefense(atkVals)
+    const atk = CombatEngine.heroAtkTotal(
+      atkVals,
+      this.state,
+      this.rerollsSpentThisTurn,
+    )
+    const defTierUp = this.state.characterName === 'Paladín'
+    const defInfo = CombatEngine.computeDefense(atkVals, { defTierUp })
     const rollDef = CombatEngine.heroDefTotal(atkVals, this.state)
     const defTotal = this.pendingHeroDef + rollDef
     const enemyDef = this.enemy.totalDefense
@@ -503,7 +634,9 @@ export class CombatScene extends Phaser.Scene {
 
     const atkSum = atkVals.reduce((a, b) => a + b, 0)
     const atkParts = [`${atkSum}`]
-    if (atk.combo > 0) atkParts.push(`+${atk.combo}`)
+    if (atk.power.combo > 0) atkParts.push(`+${atk.power.combo}`)
+    if (atk.mageBonus > 0) atkParts.push(`+${atk.mageBonus}`)
+    if (atk.barbBonus > 0) atkParts.push(`+${atk.barbBonus}`)
     if (heavy) atkParts.push('+2')
     if (this.state.bonusDmgFlat > 0) atkParts.push(`+${this.state.bonusDmgFlat}`)
 
@@ -523,17 +656,58 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private highlightCombos(dice: DieSprite[]) {
+    // One distinct color per face that forms a combo (pair+).
+    const FACE_COLORS: Record<number, number> = {
+      1: 0x66ccff,
+      2: 0x66ee88,
+      3: 0xffee66,
+      4: 0xff9944,
+      5: 0xee66cc,
+      6: 0x7788ff,
+    }
     const counts = new Map<number, number>()
     for (const d of dice) {
       counts.set(d.value, (counts.get(d.value) ?? 0) + 1)
     }
+
+    const allSame =
+      dice.length >= 2 &&
+      counts.size === 1 &&
+      (counts.values().next().value ?? 0) >= 2
+
+    if (allSame) {
+      this.startRainbowBorders(dice)
+      return
+    }
+
+    this.stopRainbowBorders()
     for (const d of dice) {
       const count = counts.get(d.value) ?? 1
-      if (count >= 4) d.setComboBorder(0xffaa00)
-      else if (count >= 3) d.setComboBorder(0xcc6622)
-      else if (count >= 2) d.setComboBorder(0xccaa44)
+      if (count >= 2) d.setComboBorder(FACE_COLORS[d.value] ?? 0xccaa44)
       else d.setComboBorder(null)
     }
+  }
+
+  private startRainbowBorders(dice: DieSprite[]) {
+    if (!this.rainbowTimer) {
+      this.rainbowHue = 0
+      this.rainbowTimer = this.time.addEvent({
+        delay: 70,
+        loop: true,
+        callback: () => {
+          this.rainbowHue = (this.rainbowHue + 18) % 360
+          const color = hsvToRgb(this.rainbowHue, 0.85, 1)
+          for (const d of this.atkDice) d.setComboBorder(color)
+        },
+      })
+    }
+    const color = hsvToRgb(this.rainbowHue, 0.85, 1)
+    for (const d of dice) d.setComboBorder(color)
+  }
+
+  private stopRainbowBorders() {
+    this.rainbowTimer?.remove(false)
+    this.rainbowTimer = null
   }
 
   private setDiceInteractive(_group: DiceGroup, on: boolean) {
@@ -542,16 +716,18 @@ export class CombatScene extends Phaser.Scene {
 
   private updateRerollLabels() {
     const count = this.rerolls.atk
-    this.atkRerollTxt.setText(`[R] x${count}`)
-    if (count <= 0) {
+    const canReroll = this.freeRerollAvailable || count > 0
+    const mark = this.freeRerollAvailable ? '*' : ''
+    this.atkRerollTxt.setText(`[R] x${count}${mark}`)
+    if (!canReroll) {
       this.atkRerollTxt.setColor('#555555')
       this.atkRerollBtn.disableInteractive()
     } else {
-      this.atkRerollTxt.setColor('#dddddd')
+      this.atkRerollTxt.setColor(this.freeRerollAvailable ? '#88ffcc' : '#dddddd')
       this.atkRerollBtn.setInteractive({ useHandCursor: true })
     }
 
-    this.setDiceInteractive('atk', count > 0 && !this.attacking)
+    this.setDiceInteractive('atk', canReroll && !this.attacking)
   }
 
   // ── Combat flow ───────────────────────────────────────────
@@ -580,6 +756,7 @@ export class CombatScene extends Phaser.Scene {
       this.enemy,
       this.state,
       this.pendingHeroDef,
+      this.rerollsSpentThisTurn,
     )
     this.pendingHeroDef = result.defTotal
     this.setHeroDef(result.defTotal)
@@ -600,6 +777,16 @@ export class CombatScene extends Phaser.Scene {
         DamageNumbers.show(this, enemyX, floatY - 10, result.atkCombo, '#ffaa00')
       }
       DamageNumbers.show(this, enemyX, floatY + 4, result.finalDamage, '#ff4444')
+      if (result.heal > 0) {
+        DamageNumbers.show(
+          this,
+          this.heroArenaX,
+          HERO_ARENA_Y - 48,
+          result.heal,
+          '#66ff99',
+        )
+        this.heroHpBar.setValue(this.state.hp)
+      }
       this.tweens.add({
         targets: this.enemyGfx,
         alpha: 0.3, yoyo: true, duration: 80, repeat: 2,
@@ -620,7 +807,75 @@ export class CombatScene extends Phaser.Scene {
   private runEnemyTurn() {
     this.attackBtnTxt.setText(t('combat.enemyTurn'))
     AudioSystem.play('dice')
-    this.time.delayedCall(450, () => this.resolveEnemyAttack())
+    this.time.delayedCall(450, () => {
+      if (Math.random() < DODGE_CHANCE) {
+        this.playDodgeRoll()
+      } else {
+        this.resolveEnemyAttack()
+      }
+    })
+  }
+
+  /** 1% chance: player rolls a die; 4–6 negates the enemy hit. */
+  private playDodgeRoll() {
+    const die = new DieSprite(
+      this,
+      this.heroArenaX + 36,
+      HERO_ARENA_Y - 24,
+      DIE_SIZE,
+    )
+    die.setDepth(45)
+    die.setDiceInteractive(false)
+    die.setAlpha(1)
+
+    const face = Math.floor(Math.random() * 6) + 1
+    AudioSystem.play('dice')
+    die.roll(face, () => {
+      this.time.delayedCall(180, () => {
+        if (face >= 4) {
+          AudioSystem.play('dodge')
+          const label = addPixelText(
+            this,
+            this.heroArenaX,
+            HERO_ARENA_Y - 56,
+            t('combat.dodge'),
+            { fontSize: '16px', color: '#88ffcc' },
+          ).setOrigin(0.5).setDepth(50)
+          this.shakeTarget(this.heroGfx, 3, 200)
+          this.tweens.add({
+            targets: [die, label],
+            alpha: 0,
+            y: '-=12',
+            delay: 320,
+            duration: 260,
+            onComplete: () => {
+              die.destroy()
+              label.destroy()
+              this.resetPlayerTurn()
+            },
+          })
+        } else {
+          const label = addPixelText(
+            this,
+            this.heroArenaX,
+            HERO_ARENA_Y - 56,
+            t('combat.dodgeFail'),
+            { fontSize: '8px', color: '#aaaaaa' },
+          ).setOrigin(0.5).setDepth(50)
+          this.tweens.add({
+            targets: [die, label],
+            alpha: 0,
+            duration: 200,
+            delay: 160,
+            onComplete: () => {
+              die.destroy()
+              label.destroy()
+              this.resolveEnemyAttack()
+            },
+          })
+        }
+      })
+    })
   }
 
   private resolveEnemyAttack() {
@@ -782,8 +1037,11 @@ export class CombatScene extends Phaser.Scene {
 
   private resetPlayerTurn() {
     this.rerolls = { ...effectiveRerollMax(this.state) }
+    this.rerollsSpentThisTurn = 0
+    this.freeRerollAvailable = this.state.characterName === 'Pícaro'
     this.setHeroDef(this.pendingHeroDef)
     this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.lastCalloutKey = null
     this.preRollAll(() => this.enableAttack())
   }
 
@@ -881,8 +1139,12 @@ export class CombatScene extends Phaser.Scene {
       duration = Math.min(duration, 120)
     }
     this.shakeTimers.get(target)?.remove(false)
-    target.x = 0
-    target.y = 0
+    // Keep the first rest position if a shake is restarted mid-flight.
+    let rest = this.shakeRests.get(target)
+    if (!rest) {
+      rest = { x: target.x, y: target.y }
+      this.shakeRests.set(target, rest)
+    }
 
     const start = this.time.now
     const event = this.time.addEvent({
@@ -891,15 +1153,16 @@ export class CombatScene extends Phaser.Scene {
       callback: () => {
         const t = this.time.now - start
         if (t >= duration) {
-          target.x = 0
-          target.y = 0
+          target.x = rest.x
+          target.y = rest.y
+          this.shakeRests.delete(target)
           this.shakeTimers.delete(target)
           event.remove()
           return
         }
         const damp = 1 - t / duration
-        target.x = (Math.random() * 2 - 1) * intensity * damp
-        target.y = (Math.random() * 2 - 1) * intensity * damp
+        target.x = rest.x + (Math.random() * 2 - 1) * intensity * damp
+        target.y = rest.y + (Math.random() * 2 - 1) * intensity * damp
       },
     })
     this.shakeTimers.set(target, event)

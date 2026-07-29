@@ -35,7 +35,7 @@ export class RunState {
   coins = 0
   maxHp = 30
   hp = 30
-  characterName = 'Guerrero'
+  characterName = 'Paladín'
   seed = 0
   passives: string[] = []
   diceLoadout: DiceLoadout = { atk: 4 }

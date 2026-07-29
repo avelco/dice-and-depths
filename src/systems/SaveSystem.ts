@@ -59,7 +59,9 @@ function deserialize(data: Record<string, unknown>): RunState {
         : 0
   state.maxHp = (data.maxHp as number) ?? 30
   state.hp = (data.hp as number) ?? state.maxHp
-  state.characterName = (data.characterName as string) ?? 'Guerrero'
+  const loadedName = (data.characterName as string) ?? 'Paladín'
+  // Legacy rename: Guerrero → Paladín
+  state.characterName = loadedName === 'Guerrero' ? 'Paladín' : loadedName
   state.seed = (data.seed as number) ?? 0
   state.passives = (data.passives as string[]) ?? []
   state.diceLoadout = normalizeLoadout(data.diceLoadout)

@@ -15,7 +15,7 @@ export function renderDebugHeader(scene: Phaser.Scene, rs: RunState) {
 }
 
 export function createDebugState(floor = 5): RunState {
-  const state = createNewRun('Guerrero', 42)
+  const state = createNewRun('Paladín', 42)
   state.floor = floor
   state.coins = 100 + floor * 30
   state.maxHp = 30 + Math.floor(floor * 3)

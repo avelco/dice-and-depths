@@ -49,13 +49,13 @@ export class MenuScene extends Phaser.Scene {
     MetaProgression.load()
     syncRotateHintLocale()
 
-    // Brand-new players: skip hub and drop into floor 1 as Guerrero.
+    // Brand-new players: skip hub and drop into floor 1 as Paladín.
     if (!MetaProgression.isTutorialDone()) {
       const existing = SaveSystem.load('quicksave')
       const state =
         existing && existing.floor === 1
           ? existing
-          : startCampaignRun('Guerrero', 1)
+          : startCampaignRun('Paladín', 1)
       this.scene.start('MapScene', { runState: state })
       return
     }

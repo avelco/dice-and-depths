@@ -79,9 +79,9 @@ export class Enemy {
     const tpl = pool[Math.floor(rng() * pool.length)] ?? TEMPLATES[0]
 
     const scale = kind === 'boss' ? 1.55 : kind === 'elite' ? 1.15 : 1
-    // Tuned for no-multiplier combat: ~2–3 player hits on floor 1
-    const baseHp = 18 + Math.floor(rng() * 7) // 18–24
-    const hp = Math.floor((baseHp + floor * 4) * scale + rng() * 3)
+    // Tuned for count×face combos: ~2–4 player hits on floor 1
+    const baseHp = 24 + Math.floor(rng() * 8) // 24–31
+    const hp = Math.floor((baseHp + floor * 5) * scale + rng() * 3)
     const def = Math.floor((tpl.baseDef + floor * 0.5) * scale)
     const atkDiceCount = kind === 'boss' ? 3 : kind === 'elite' ? 3 : 2
     const rerollMax = kind === 'boss' ? 2 : kind === 'elite' ? 2 : 1

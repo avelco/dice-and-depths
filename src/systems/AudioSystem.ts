@@ -11,6 +11,16 @@ type SfxId =
   | 'heal'
   | 'coin'
   | 'map'
+  | 'combo2'
+  | 'combo3'
+  | 'combo4'
+  | 'combo5'
+  | 'combo6'
+  | 'combo7'
+  | 'combo8'
+  | 'combo9'
+  | 'comboMonster'
+  | 'dodge'
 
 /** Lightweight procedural SFX — no asset files required. */
 export class AudioSystem {
@@ -90,6 +100,49 @@ export class AudioSystem {
           break
         case 'map':
           this.tone(360, 0.05, 'triangle', 0.09)
+          break
+        case 'combo2':
+          this.tone(440, 0.06, 'square', 0.1)
+          this.tone(660, 0.08, 'square', 0.08, 0.05)
+          break
+        case 'combo3':
+          this.tone(520, 0.06, 'square', 0.11)
+          this.tone(780, 0.09, 'triangle', 0.09, 0.05)
+          break
+        case 'combo4':
+          this.tone(600, 0.07, 'square', 0.12)
+          this.tone(900, 0.1, 'triangle', 0.1, 0.05)
+          break
+        case 'combo5':
+          this.tone(680, 0.07, 'square', 0.12)
+          this.tone(1020, 0.1, 'square', 0.1, 0.06)
+          break
+        case 'combo6':
+          this.tone(760, 0.08, 'sawtooth', 0.12)
+          this.tone(1140, 0.1, 'square', 0.1, 0.06)
+          break
+        case 'combo7':
+          this.tone(840, 0.08, 'sawtooth', 0.13)
+          this.tone(1260, 0.11, 'square', 0.1, 0.07)
+          break
+        case 'combo8':
+          this.tone(920, 0.09, 'sawtooth', 0.14)
+          this.tone(1380, 0.12, 'triangle', 0.11, 0.07)
+          break
+        case 'combo9':
+          this.tone(1000, 0.1, 'square', 0.14)
+          this.tone(1500, 0.12, 'triangle', 0.12, 0.08)
+          this.tone(1800, 0.1, 'sine', 0.08, 0.16)
+          break
+        case 'comboMonster':
+          this.tone(220, 0.08, 'sawtooth', 0.16)
+          this.tone(440, 0.1, 'square', 0.14, 0.06)
+          this.tone(880, 0.12, 'triangle', 0.12, 0.14)
+          this.tone(1320, 0.14, 'sine', 0.1, 0.22)
+          break
+        case 'dodge':
+          this.tone(720, 0.05, 'triangle', 0.12)
+          this.tone(1080, 0.08, 'sine', 0.1, 0.04)
           break
       }
     } catch {
