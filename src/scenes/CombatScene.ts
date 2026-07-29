@@ -18,6 +18,7 @@ import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { charName, enemyName, t, type TranslationKey } from '../i18n/I18n'
 import { enableTouchTarget, minZoneSize } from '../ui/touchTarget'
+import { addBackButton } from '../ui/BackButton'
 import { preferReducedMotion } from '../systems/Device'
 import { MetaProgression } from '../domain/progression/MetaProgression'
 import { TutorialBanner } from '../ui/TutorialBanner'
@@ -174,14 +175,10 @@ export class CombatScene extends Phaser.Scene {
     this.drawSection3()
     this.preRollAll(() => this.enableAttack())
 
-    const escTxt = addPixelText(this, width / 2, height - 8, t('combat.esc'), {
-      fontSize: '8px', color: '#aaaaaa',
-    }).setOrigin(0.5).setDepth(10)
-    enableTouchTarget(escTxt, { min: 28 })
-    escTxt.on('pointerover', () => escTxt.setColor('#ffffff'))
-    escTxt.on('pointerout', () => escTxt.setColor('#aaaaaa'))
-    escTxt.on('pointerdown', () =>
-      this.scene.start('MapScene', { runState: this.state }),
+    addBackButton(
+      this,
+      () => this.scene.start('MapScene', { runState: this.state }),
+      { labelKey: 'combat.esc' },
     )
 
     bindSceneKeys(this, {

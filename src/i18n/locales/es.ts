@@ -30,7 +30,7 @@ export const es = {
   'options.fullscreen': '[ Pantalla completa ]',
   'options.fullscreenExit': '[ Salir pantalla completa ]',
 
-  'ui.back': '[←]',
+  'ui.back': '← VOLVER',
   'ui.tapHint': 'tocar / click',
   'map.hint': 'tocar nodo · [←] menu',
 
@@ -82,7 +82,7 @@ export const es = {
   // Combat
   'combat.attack': 'ATACAR',
   'combat.enemyTurn': 'ENEMIGO',
-  'combat.esc': '[←] mapa',
+  'combat.esc': '← MAPA',
   'combat.phase': 'FASE',
   'combat.ko': 'KO!',
   'combat.rerollHint': 'tocar dado o [R]',
@@ -160,7 +160,7 @@ export const es = {
   'shop.postTitle': 'BOTÍN',
   'shop.soulsGained': '+{n} almas',
   'shop.almas': 'Almas: {n}',
-  'shop.exit': '[0] Salir',
+  'shop.exit': 'SALIR',
   'shop.diceAtk': '+1 dado ATK ({n}a)',
   'shop.rerollAtk': '+1 reroll ATK ({n}a)',
   'shop.heal': 'Cura 25% HP ({n}a)',
@@ -202,7 +202,7 @@ export const es = {
   'gameover.defeat': 'FIN DE PARTIDA',
   'gameover.dust': '+{n} polvo meta',
   'gameover.total': 'Total: {n}',
-  'gameover.menu': '[ Menu ]',
+  'gameover.menu': 'MENU',
   'gameover.unlockHp': '+5 HP inicio',
   'gameover.unlockGold': '+10 almas inicio',
   'gameover.unlockRogue': 'Desbloquear Pícaro',

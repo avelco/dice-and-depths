@@ -30,7 +30,7 @@ export const en: Record<TranslationKey, string> = {
   'options.fullscreen': '[ Fullscreen ]',
   'options.fullscreenExit': '[ Exit fullscreen ]',
 
-  'ui.back': '[←]',
+  'ui.back': '← BACK',
   'ui.tapHint': 'tap / click',
   'map.hint': 'tap node · [←] menu',
 
@@ -78,7 +78,7 @@ export const en: Record<TranslationKey, string> = {
 
   'combat.attack': 'ATTACK',
   'combat.enemyTurn': 'ENEMY',
-  'combat.esc': '[←] map',
+  'combat.esc': '← MAP',
   'combat.phase': 'PHASE',
   'combat.ko': 'KO!',
   'combat.rerollHint': 'tap die or [R]',
@@ -153,7 +153,7 @@ export const en: Record<TranslationKey, string> = {
   'shop.postTitle': 'LOOT',
   'shop.soulsGained': '+{n} souls',
   'shop.almas': 'Souls: {n}',
-  'shop.exit': '[0] Leave',
+  'shop.exit': 'LEAVE',
   'shop.diceAtk': '+1 ATK die ({n}s)',
   'shop.rerollAtk': '+1 ATK reroll ({n}s)',
   'shop.heal': 'Heal 25% HP ({n}s)',
@@ -191,7 +191,7 @@ export const en: Record<TranslationKey, string> = {
   'gameover.defeat': 'GAME OVER',
   'gameover.dust': '+{n} meta dust',
   'gameover.total': 'Total: {n}',
-  'gameover.menu': '[ Menu ]',
+  'gameover.menu': 'MENU',
   'gameover.unlockHp': '+5 starting HP',
   'gameover.unlockGold': '+10 starting souls',
   'gameover.unlockRogue': 'Unlock Rogue',

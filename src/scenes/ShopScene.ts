@@ -86,10 +86,12 @@ export class ShopScene extends Phaser.Scene {
     })
 
     const exit = addPixelText(this, cx, height - 28, t('shop.exit'), {
-      fontSize: '8px',
-      color: '#aaaaaa',
+      fontSize: '10px',
+      color: '#dddddd',
     }).setOrigin(0.5)
-    enableTouchTarget(exit, { min: 24 })
+    enableTouchTarget(exit, { min: 36 })
+    exit.on('pointerover', () => exit.setColor('#ffffff'))
+    exit.on('pointerout', () => exit.setColor('#dddddd'))
     exit.on('pointerdown', () => this.leave(rs))
 
     const keys: Record<string, () => void> = {
