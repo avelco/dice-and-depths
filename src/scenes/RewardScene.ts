@@ -14,8 +14,9 @@ import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { gearName, passiveName, t } from '../i18n/I18n'
 import { ItemTooltip, gearTooltipContent } from '../ui/ItemTooltip'
+import { addDie, canAddDie, engraveWeakestFace } from '../domain/dice/DicePool'
 
-type RewardKind = 'coins' | 'heal' | 'dice_atk' | 'reroll_atk' | 'passive'
+type RewardKind = 'coins' | 'heal' | 'dice_atk' | 'reroll_atk' | 'passive' | 'engrave'
 
 interface RewardOption {
   kind: RewardKind
@@ -60,10 +61,12 @@ function buildOptions(state: RunState, tier: RewardTier): RewardOption[] {
     { kind: 'heal', label: t('reward.heal', { n: Math.floor(state.maxHp * 0.3) }), heal: Math.floor(state.maxHp * 0.3) },
   ]
 
-  if (state.diceLoadout.atk < 6 && rng() > 0.4) {
+  if (canAddDie(state.dice) && rng() > 0.4) {
     options.push({ kind: 'dice_atk', label: t('reward.diceAtk') })
   } else if (state.rerollMax.atk < 8 && rng() > 0.35) {
     options.push({ kind: 'reroll_atk', label: t('reward.rerollAtk') })
+  } else if (rng() > 0.5) {
+    options.push({ kind: 'engrave', label: t('reward.engrave') })
   } else {
     const [pid] = pickRandomPassiveIds(1, state.passives, rng)
     options.push({
@@ -298,11 +301,15 @@ export class RewardScene extends Phaser.Scene {
         AudioSystem.play('heal')
         break
       case 'dice_atk':
-        this.state.diceLoadout.atk = Math.min(6, this.state.diceLoadout.atk + 1)
+        addDie(this.state.dice)
         AudioSystem.play('select')
         break
       case 'reroll_atk':
         this.state.rerollMax.atk = Math.min(8, this.state.rerollMax.atk + 1)
+        AudioSystem.play('select')
+        break
+      case 'engrave':
+        engraveWeakestFace(this.state.dice)
         AudioSystem.play('select')
         break
       case 'passive':

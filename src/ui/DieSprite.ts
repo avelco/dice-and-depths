@@ -2,16 +2,23 @@ import Phaser from 'phaser'
 import { pixelTextStyle, applyPixelTextSharpness } from './pixelText'
 import { combatTextStyle, applyCombatTextSharpness } from './combatText'
 import type { UiFont } from './HealthBar'
+import { STANDARD_FACES, type DieFaces } from '../domain/dice/Die'
 
 const DIE_SIZE = 14
+const DOT = 4
 
 export class DieSprite extends Phaser.GameObjects.Container {
   private bg: Phaser.GameObjects.Graphics
   private label: Phaser.GameObjects.Text
+  private abilityGfx: Phaser.GameObjects.Graphics
   private hitZone: Phaser.GameObjects.Zone
   private _value = 0
   private _size: number
   private comboColor: number | null = null
+  private abilityColor: number | null = null
+  private faces: DieFaces = [...STANDARD_FACES] as DieFaces
+  /** Index into RunState.dice */
+  runIndex = -1
 
   onReroll: (() => void) | null = null
 
@@ -34,6 +41,9 @@ export class DieSprite extends Phaser.GameObjects.Container {
     else applyPixelTextSharpness(this.label)
     this.add(this.label)
 
+    this.abilityGfx = scene.add.graphics()
+    this.add(this.abilityGfx)
+
     this.hitZone = scene.add
       .zone(0, 0, size + 2, size + 2)
       .setInteractive({ useHandCursor: true })
@@ -46,6 +56,30 @@ export class DieSprite extends Phaser.GameObjects.Container {
 
   get value(): number {
     return this._value
+  }
+
+  setFaces(faces: DieFaces) {
+    this.faces = [...faces] as DieFaces
+  }
+
+  setAbility(color: number | null) {
+    this.abilityColor = color
+    this.drawAbilityDot(1)
+  }
+
+  flashAbility() {
+    if (this.abilityColor == null) return
+    this.drawAbilityDot(1)
+    this.scene.tweens.add({
+      targets: this.abilityGfx,
+      alpha: { from: 1, to: 0.2 },
+      duration: 120,
+      yoyo: true,
+      repeat: 2,
+      onComplete: () => {
+        this.abilityGfx.setAlpha(1)
+      },
+    })
   }
 
   setValue(v: number) {
@@ -92,7 +126,7 @@ export class DieSprite extends Phaser.GameObjects.Container {
           this.setValue(finalValue)
           onComplete?.()
         } else {
-          const rnd = Math.floor(Math.random() * 6) + 1
+          const rnd = this.faces[Math.floor(Math.random() * this.faces.length)]!
           this._value = rnd
           this.label.setText(String(rnd))
           this.redraw(0x444444)
@@ -103,6 +137,16 @@ export class DieSprite extends Phaser.GameObjects.Container {
 
   highlight(on: boolean) {
     this.redraw(on ? 0x555566 : 0x3a3a4a)
+  }
+
+  private drawAbilityDot(alpha: number) {
+    this.abilityGfx.clear()
+    this.abilityGfx.setAlpha(alpha)
+    if (this.abilityColor == null) return
+    const x = this._size / 2 - DOT / 2 - 1
+    const y = -this._size / 2 + 1
+    this.abilityGfx.fillStyle(this.abilityColor, 1)
+    this.abilityGfx.fillRect(x, y, DOT, DOT)
   }
 
   private redraw(bgColor: number) {
@@ -124,5 +168,18 @@ export class DieSprite extends Phaser.GameObjects.Container {
       this._size,
       2,
     )
+    this.drawAbilityDot(1)
+  }
+}
+
+/** Color for ability corner glyph. */
+export function abilityColor(abilityId: string | null): number | null {
+  switch (abilityId) {
+    case 'bulwark': return 0x4488ff
+    case 'arcane': return 0xaa66ff
+    case 'rage': return 0xff4444
+    case 'mercy': return 0x66ff99
+    case 'swift': return 0x88ffcc
+    default: return null
   }
 }

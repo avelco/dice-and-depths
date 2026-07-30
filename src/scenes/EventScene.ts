@@ -5,6 +5,7 @@ import { addPixelText } from '../ui/pixelText'
 import type { RunState } from '../domain/progression/RunState'
 import { markCurrentNodeCleared } from './MapScene'
 import { t, type TranslationKey } from '../i18n/I18n'
+import { addDie, canAddDie } from '../domain/dice/DicePool'
 
 const EVENTS: {
   titleKey: TranslationKey
@@ -34,9 +35,9 @@ const EVENTS: {
       {
         labelKey: 'event.merchant.buy',
         apply: (rs: RunState) => {
-          if (rs.coins >= 20) {
+          if (rs.coins >= 20 && canAddDie(rs.dice)) {
             rs.coins -= 20
-            rs.diceLoadout.atk = Math.min(6, rs.diceLoadout.atk + 1)
+            addDie(rs.dice)
           }
         },
       },

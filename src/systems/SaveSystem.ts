@@ -1,4 +1,5 @@
-import { RunState, syncRunStateDerived, type MapSnapshot, type DiceLoadout, type RerollMax } from '../domain/progression/RunState'
+import { RunState, syncRunStateDerived, type MapSnapshot, type RerollMax } from '../domain/progression/RunState'
+import { makeBasicDice, makeDie, STANDARD_FACES, type DieFaces, type RunDie } from '../domain/dice/Die'
 
 const PREFIX = 'dnd_save_'
 
@@ -10,18 +11,35 @@ export interface SaveSlot {
   characterName: string
 }
 
-function normalizeLoadout(raw: unknown): DiceLoadout {
-  const d = (raw ?? {}) as Partial<DiceLoadout>
-  return {
-    atk: typeof d.atk === 'number' ? d.atk : 4,
-  }
-}
-
 function normalizeRerolls(raw: unknown): RerollMax {
   const d = (raw ?? {}) as Partial<RerollMax>
   return {
     atk: typeof d.atk === 'number' ? d.atk : 4,
   }
+}
+
+function normalizeDie(raw: unknown, fallbackId: string): RunDie {
+  const d = (raw ?? {}) as Partial<RunDie>
+  const faces =
+    Array.isArray(d.faces) && d.faces.length === 6
+      ? ([...d.faces] as DieFaces)
+      : ([...STANDARD_FACES] as DieFaces)
+  return makeDie(
+    typeof d.id === 'string' ? d.id : fallbackId,
+    typeof d.abilityId === 'string' ? d.abilityId : null,
+    faces,
+  )
+}
+
+/** v5: `dice: RunDie[]`. Legacy v4: `diceLoadout: { atk: number }`. */
+function normalizeDice(data: Record<string, unknown>): RunDie[] {
+  if (Array.isArray(data.dice) && data.dice.length > 0) {
+    return data.dice.map((d, i) => normalizeDie(d, `d${i}`))
+  }
+  const loadout = data.diceLoadout as { atk?: number } | undefined
+  const count =
+    typeof loadout?.atk === 'number' && loadout.atk > 0 ? loadout.atk : 4
+  return makeBasicDice(count)
 }
 
 function serialize(state: RunState) {
@@ -33,7 +51,7 @@ function serialize(state: RunState) {
     characterName: state.characterName,
     seed: state.seed,
     passives: state.passives,
-    diceLoadout: state.diceLoadout,
+    dice: state.dice,
     rerollMax: state.rerollMax,
     currentNodeId: state.currentNodeId,
     map: state.map,
@@ -43,7 +61,7 @@ function serialize(state: RunState) {
     bonusDefFlat: state.bonusDefFlat,
     bonusDmgFlat: state.bonusDmgFlat,
     savedAt: Date.now(),
-    version: 4,
+    version: 5,
   }
 }
 
@@ -64,7 +82,7 @@ function deserialize(data: Record<string, unknown>): RunState {
   state.characterName = loadedName === 'Guerrero' ? 'Paladín' : loadedName
   state.seed = (data.seed as number) ?? 0
   state.passives = (data.passives as string[]) ?? []
-  state.diceLoadout = normalizeLoadout(data.diceLoadout)
+  state.dice = normalizeDice(data)
   state.rerollMax = normalizeRerolls(data.rerollMax)
   state.currentNodeId = (data.currentNodeId as number | null) ?? null
   state.map = (data.map as MapSnapshot | null) ?? null

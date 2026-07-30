@@ -1,6 +1,10 @@
 import { Enemy } from '../enemies/Enemy'
 import type { RunState } from '../progression/RunState'
 import { hasPassive } from '../progression/Passives'
+import {
+  emptyOutcome,
+  type TriggerOutcome,
+} from '../dice/DiceAbilities'
 
 export interface CombatResult {
   atkTotal: number
@@ -28,8 +32,8 @@ export interface DefensePower {
 
 export interface HeroAtkBreakdown {
   power: DicePower
-  mageBonus: number
-  barbBonus: number
+  bonusDamage: number
+  atkMultPct: number
   total: number
 }
 
@@ -81,7 +85,7 @@ export class CombatEngine {
   }
 
   /**
-   * Mago: best face among 5–6 counts double.
+   * Best face among 5–6 counts double.
    * If that face is in a combo, bonus = its combo term (value×count); else +face.
    */
   static mageHighFaceBonus(dice: number[]): number {
@@ -101,21 +105,22 @@ export class CombatEngine {
 
   static heroAtkTotal(
     dice: number[],
-    state: RunState,
-    rerollsSpent = 0,
+    _state: RunState,
+    outcome: TriggerOutcome = emptyOutcome(),
   ): HeroAtkBreakdown {
     const power = CombatEngine.computePower(dice)
-    const mageBonus =
-      state.characterName === 'Mago' ? CombatEngine.mageHighFaceBonus(dice) : 0
-    const barbBonus =
-      state.characterName === 'Bárbaro' && rerollsSpent === 0
-        ? Math.floor(power.total * 0.2)
-        : 0
+    const faceBonus = outcome.highFaceDouble
+      ? CombatEngine.mageHighFaceBonus(dice)
+      : 0
+    const bonusDamage = outcome.bonusDamage + faceBonus
+    const atkMultPct = outcome.atkMultPct
+    const multBonus =
+      atkMultPct > 0 ? Math.floor(power.total * (atkMultPct / 100)) : 0
     return {
       power,
-      mageBonus,
-      barbBonus,
-      total: power.total + mageBonus + barbBonus,
+      bonusDamage,
+      atkMultPct,
+      total: power.total + bonusDamage + multBonus,
     }
   }
 
@@ -149,7 +154,7 @@ export class CombatEngine {
 
   /**
    * DEF from matching dice only: pair×1, trio×3, quad+×6.
-   * Paladín: one tier up → pair×3, trio×6, quad+×12.
+   * With defTierUp: pair×3, trio×6, quad+×12.
    */
   static computeDefense(
     dice: number[],
@@ -172,11 +177,17 @@ export class CombatEngine {
     return { total, parts }
   }
 
-  static heroDefTotal(atkDice: number[], state: RunState): number {
-    const defTierUp = state.characterName === 'Paladín'
-    let total = CombatEngine.computeDefense(atkDice, { defTierUp }).total
+  static heroDefTotal(
+    atkDice: number[],
+    state: RunState,
+    outcome: TriggerOutcome = emptyOutcome(),
+  ): number {
+    let total = CombatEngine.computeDefense(atkDice, {
+      defTierUp: outcome.defTierUp,
+    }).total
     if (hasPassive(state, 'iron_skin')) total += 2
     total += state.bonusDefFlat
+    total += outcome.bonusShield
     return total
   }
 
@@ -185,12 +196,13 @@ export class CombatEngine {
     enemy: Enemy,
     state: RunState,
     carriedDef = 0,
-    rerollsSpent = 0,
+    outcome: TriggerOutcome = emptyOutcome(),
   ): CombatResult {
-    const atk = CombatEngine.heroAtkTotal(atkDice, state, rerollsSpent)
-    const defTierUp = state.characterName === 'Paladín'
-    const def = CombatEngine.computeDefense(atkDice, { defTierUp })
-    const rollDef = CombatEngine.heroDefTotal(atkDice, state)
+    const atk = CombatEngine.heroAtkTotal(atkDice, state, outcome)
+    const def = CombatEngine.computeDefense(atkDice, {
+      defTierUp: outcome.defTierUp,
+    })
+    const rollDef = CombatEngine.heroDefTotal(atkDice, state, outcome)
     const defTotal = carriedDef + rollDef
 
     if (enemy.skill === 'phase' && Math.random() < 0.25) {
@@ -215,13 +227,13 @@ export class CombatEngine {
     const hpBefore = enemy.hp
     enemy.hp = Math.max(0, enemy.hp - finalDamage)
 
-    let heal = 0
-    if (state.characterName === 'Clérigo') {
+    let heal = outcome.heal
+    if (outcome.overkillHealPct > 0) {
       const overkill = Math.max(0, finalDamage - hpBefore)
-      heal = Math.floor(overkill / 2)
-      if (heal > 0) {
-        state.hp = Math.min(state.maxHp, state.hp + heal)
-      }
+      heal += Math.floor(overkill * (outcome.overkillHealPct / 100))
+    }
+    if (heal > 0) {
+      state.hp = Math.min(state.maxHp, state.hp + heal)
     }
 
     if (enemy.skill === 'split' && enemy.alive) {

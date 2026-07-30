@@ -2,12 +2,13 @@ import Phaser from 'phaser'
 import { getRunState, effectiveRerollMax, applyPassiveOnKill, trySecondWind } from '../debug'
 import { SaveSystem } from '../systems/SaveSystem'
 import { HealthBar } from '../ui/HealthBar'
-import { DieSprite } from '../ui/DieSprite'
+import { DieSprite, abilityColor } from '../ui/DieSprite'
 import { DamageNumbers } from '../ui/DamageNumbers'
 import { addPixelText } from '../ui/pixelText'
 import {
   CombatPowerCard,
   formulaTokensFromParts,
+  type FormulaToken,
 } from '../ui/CombatPowerCard'
 import { Enemy } from '../domain/enemies/Enemy'
 import { EnemyAI } from '../domain/enemies/EnemyAI'
@@ -23,6 +24,15 @@ import { showConfirmModal } from '../ui/ConfirmModal'
 import { preferReducedMotion } from '../systems/Device'
 import { MetaProgression } from '../domain/progression/MetaProgression'
 import { TutorialBanner } from '../ui/TutorialBanner'
+import { rollDie } from '../domain/dice/Die'
+import {
+  emptyOutcome,
+  mergeOutcomes,
+  resolveTriggers,
+  type TriggerOutcome,
+  type TriggerContext,
+  type DieTrigger,
+} from '../domain/dice/DiceAbilities'
 
 const DIE_SIZE = 24
 const DIE_GAP = 6
@@ -112,7 +122,13 @@ export class CombatScene extends Phaser.Scene {
 
   private rerolls = { atk: 4 }
   private rerollsSpentThisTurn = 0
-  private freeRerollAvailable = false
+  private turnOutcome: TriggerOutcome = emptyOutcome()
+  private triggerCtx: TriggerContext = {
+    rerolledIds: [],
+    rerollsSpent: 0,
+    used: new Map(),
+    activationsThisTurn: 0,
+  }
   private heroArenaX = 135
   private enemyArenaX = 135
   private pendingHeroDef = 0
@@ -137,7 +153,13 @@ export class CombatScene extends Phaser.Scene {
     this.queueGfx = []
     this.attacking = false
     this.rerollsSpentThisTurn = 0
-    this.freeRerollAvailable = false
+    this.turnOutcome = emptyOutcome()
+    this.triggerCtx = {
+      rerolledIds: [],
+      rerollsSpent: 0,
+      used: new Map(),
+      activationsThisTurn: 0,
+    }
     this.pendingHeroDef = 0
     this.pendingEnemyAtk = []
     this.rerollHintShown = false
@@ -168,7 +190,7 @@ export class CombatScene extends Phaser.Scene {
     this.enemy = this.wave[0]
     this.rerolls = { ...effectiveRerollMax(this.state) }
     this.rerollsSpentThisTurn = 0
-    this.freeRerollAvailable = this.state.characterName === 'Pícaro'
+    this.resetTriggerState()
 
     this.drawSection1()
     this.drawSection2()
@@ -425,11 +447,15 @@ export class CombatScene extends Phaser.Scene {
       fontSize: '8px', color: '#bbbbbb',
     }).setOrigin(0.5, 0).setDepth(7)
 
-    const atkCount = this.state.diceLoadout.atk
+    const atkCount = this.state.dice.length
     this.atkDice = this.createDiceRow(cx, this.diceRowY, atkCount)
-    this.atkDice.forEach(d => {
+    this.atkDice.forEach((d, i) => {
       d.setDepth(6)
       d.setAlpha(1)
+      d.runIndex = i
+      const runDie = this.state.dice[i]!
+      d.setFaces(runDie.faces)
+      d.setAbility(abilityColor(runDie.abilityId))
       d.onReroll = () => this.rerollSingleDie(d, 'atk')
     })
 
@@ -478,6 +504,59 @@ export class CombatScene extends Phaser.Scene {
 
   // ── Reroll system ─────────────────────────────────────────
 
+  private resetTriggerState() {
+    this.turnOutcome = emptyOutcome()
+    this.triggerCtx = {
+      rerolledIds: [],
+      rerollsSpent: 0,
+      used: new Map(),
+      activationsThisTurn: 0,
+    }
+  }
+
+  private fireTrigger(
+    trigger: DieTrigger,
+    rerolledIds: string[] = [],
+  ): TriggerOutcome {
+    this.triggerCtx.rerolledIds = rerolledIds
+    this.triggerCtx.rerollsSpent = this.rerollsSpentThisTurn
+    const values = this.atkDice.map(d => d.value)
+    const out = resolveTriggers(
+      trigger,
+      this.state.dice,
+      values,
+      this.triggerCtx,
+    )
+    this.turnOutcome = mergeOutcomes(this.turnOutcome, out)
+    if (out.bonusRerolls > 0) {
+      this.rerolls.atk += out.bonusRerolls
+    }
+    // Flat heal outside of attack resolution applies immediately and must not
+    // be re-applied by CombatEngine.resolve.
+    if (out.heal > 0 && trigger !== 'onAttack' && trigger !== 'onCombo') {
+      this.state.hp = Math.min(this.state.maxHp, this.state.hp + out.heal)
+      this.heroHpBar?.setValue(this.state.hp)
+      this.turnOutcome.heal -= out.heal
+    }
+    // Flash dice that just fired
+    if (
+      out.bonusDamage > 0 ||
+      out.bonusShield > 0 ||
+      out.heal > 0 ||
+      out.bonusRerolls > 0 ||
+      out.atkMultPct > 0 ||
+      out.overkillHealPct > 0 ||
+      out.defTierUp ||
+      out.highFaceDouble
+    ) {
+      this.atkDice.forEach((sprite, i) => {
+        const die = this.state.dice[i]
+        if (die?.abilityId) sprite.flashAbility()
+      })
+    }
+    return out
+  }
+
   private preRollAll(onDone?: () => void) {
     this.attacking = true
     this.setRerollButtonsEnabled(false)
@@ -491,16 +570,18 @@ export class CombatScene extends Phaser.Scene {
       return
     }
 
-    const finals = all.map(() => Math.floor(Math.random() * 6) + 1)
+    const finals = this.state.dice.map(d => rollDie(d))
     AudioSystem.play('dice')
     let done = 0
     all.forEach((d, i) => {
       this.time.delayedCall(i * 35, () => {
-        d.roll(finals[i], () => {
+        d.roll(finals[i]!, () => {
           done++
           if (done >= all.length) {
+            this.fireTrigger('onRoll')
             this.updateCombos()
             this.precalculateEnemyAttack()
+            this.updateRerollLabels()
             onDone?.()
           }
         })
@@ -508,16 +589,15 @@ export class CombatScene extends Phaser.Scene {
     })
   }
 
-  /** Spend a reroll charge, or the Pícaro free first reroll. */
+  /** Spend a reroll charge. */
   private trySpendReroll(group: DiceGroup): boolean {
-    if (this.freeRerollAvailable) {
-      this.freeRerollAvailable = false
-      this.rerollsSpentThisTurn++
-      return true
-    }
     if (this.rerolls[group] <= 0) return false
     this.rerolls[group]--
     this.rerollsSpentThisTurn++
+    this.triggerCtx.rerollsSpent = this.rerollsSpentThisTurn
+    if (this.rerolls[group] === 0) {
+      this.fireTrigger('onLastReroll')
+    }
     return true
   }
 
@@ -532,12 +612,17 @@ export class CombatScene extends Phaser.Scene {
     AudioSystem.play('reroll')
 
     const dice = this.atkDice
-    const finals = dice.map(() => Math.floor(Math.random() * 6) + 1)
+    const rerolledIds = this.state.dice.map(d => d.id)
+    const finals = this.state.dice.map(d => rollDie(d))
     let done = 0
     dice.forEach((d, i) => {
-      d.roll(finals[i], () => {
+      d.roll(finals[i]!, () => {
         done++
-        if (done >= dice.length) this.updateCombos()
+        if (done >= dice.length) {
+          this.fireTrigger('onReroll', rerolledIds)
+          this.fireTrigger('onKeep', rerolledIds)
+          this.updateCombos()
+        }
       })
     })
   }
@@ -552,8 +637,15 @@ export class CombatScene extends Phaser.Scene {
     this.updatePreviews()
     AudioSystem.play('reroll')
 
-    const finalValue = Math.floor(Math.random() * 6) + 1
-    die.roll(finalValue, () => this.updateCombos())
+    const runDie = this.state.dice[die.runIndex]
+    if (!runDie) return
+    const finalValue = rollDie(runDie)
+    const rerolledIds = [runDie.id]
+    die.roll(finalValue, () => {
+      this.fireTrigger('onReroll', rerolledIds)
+      this.fireTrigger('onKeep', rerolledIds)
+      this.updateCombos()
+    })
   }
 
   private updateCombos() {
@@ -625,11 +717,16 @@ export class CombatScene extends Phaser.Scene {
     const atk = CombatEngine.heroAtkTotal(
       atkVals,
       this.state,
-      this.rerollsSpentThisTurn,
+      this.turnOutcome,
     )
-    const defTierUp = this.state.characterName === 'Paladín'
-    const defInfo = CombatEngine.computeDefense(atkVals, { defTierUp })
-    const rollDef = CombatEngine.heroDefTotal(atkVals, this.state)
+    const defInfo = CombatEngine.computeDefense(atkVals, {
+      defTierUp: this.turnOutcome.defTierUp,
+    })
+    const rollDef = CombatEngine.heroDefTotal(
+      atkVals,
+      this.state,
+      this.turnOutcome,
+    )
     const defTotal = this.pendingHeroDef + rollDef
     const enemyDef = this.enemy.totalDefense
     const rawDamage = Math.max(1, atk.total - enemyDef)
@@ -637,21 +734,52 @@ export class CombatScene extends Phaser.Scene {
     const finalDamage = rawDamage + (heavy ? 2 : 0) + this.state.bonusDmgFlat
 
     const atkSum = atkVals.reduce((a, b) => a + b, 0)
-    const atkParts = [`${atkSum}`]
-    if (atk.power.combo > 0) atkParts.push(`+${atk.power.combo}`)
-    if (atk.mageBonus > 0) atkParts.push(`+${atk.mageBonus}`)
-    if (atk.barbBonus > 0) atkParts.push(`+${atk.barbBonus}`)
-    if (enemyDef > 0) atkParts.push(`-${enemyDef}`)
-    if (heavy) atkParts.push('+2')
-    if (this.state.bonusDmgFlat > 0) atkParts.push(`+${this.state.bonusDmgFlat}`)
+    const dicePower = atk.power.total
+    const atkTokens: FormulaToken[] = []
+    // Dice value × combo multiplier (honest: sum × (power/sum) = power)
+    atkTokens.push({ text: String(atkSum), color: '#cccccc' })
+    if (atkSum > 0 && dicePower > atkSum) {
+      const mult = dicePower / atkSum
+      const multStr = Number.isInteger(mult)
+        ? String(mult)
+        : (Math.round(mult * 10) / 10).toFixed(1)
+      atkTokens.push({ text: ' × ', color: '#99aacc' })
+      atkTokens.push({ text: multStr, color: '#cccccc' })
+    }
+    if (atk.bonusDamage > 0) {
+      atkTokens.push({ text: ' + ', color: '#66cc66' })
+      atkTokens.push({ text: String(atk.bonusDamage), color: '#cccccc' })
+    }
+    if (atk.atkMultPct > 0) {
+      const multBonus = Math.floor(atk.power.total * (atk.atkMultPct / 100))
+      if (multBonus > 0) {
+        atkTokens.push({ text: ' + ', color: '#66cc66' })
+        atkTokens.push({ text: String(multBonus), color: '#cccccc' })
+      }
+    }
+    if (enemyDef > 0) {
+      atkTokens.push({ text: ' - ', color: '#cc6666' })
+      atkTokens.push({ text: String(enemyDef), color: '#cccccc' })
+    }
+    if (heavy) {
+      atkTokens.push({ text: ' + ', color: '#66cc66' })
+      atkTokens.push({ text: '2', color: '#cccccc' })
+    }
+    if (this.state.bonusDmgFlat > 0) {
+      atkTokens.push({ text: ' + ', color: '#66cc66' })
+      atkTokens.push({ text: String(this.state.bonusDmgFlat), color: '#cccccc' })
+    }
 
     const defParts: string[] = []
     if (this.pendingHeroDef > 0) defParts.push(`${this.pendingHeroDef}`)
     defParts.push(...defInfo.parts)
     if (this.state.passives.includes('iron_skin')) defParts.push('+2')
     if (this.state.bonusDefFlat > 0) defParts.push(`+${this.state.bonusDefFlat}`)
+    if (this.turnOutcome.bonusShield > 0) {
+      defParts.push(`+${this.turnOutcome.bonusShield}`)
+    }
 
-    this.powerCard.setDamage(finalDamage, formulaTokensFromParts(atkParts))
+    this.powerCard.setDamage(finalDamage, atkTokens)
     this.powerCard.setDefense(defTotal, formulaTokensFromParts(defParts))
   }
 
@@ -721,14 +849,13 @@ export class CombatScene extends Phaser.Scene {
 
   private updateRerollLabels() {
     const count = this.rerolls.atk
-    const canReroll = this.freeRerollAvailable || count > 0
-    const mark = this.freeRerollAvailable ? '*' : ''
-    this.atkRerollTxt.setText(`[R] x${count}${mark}`)
+    const canReroll = count > 0
+    this.atkRerollTxt.setText(`[R] x${count}`)
     if (!canReroll) {
       this.atkRerollTxt.setColor('#555555')
       this.atkRerollBtn.disableInteractive()
     } else {
-      this.atkRerollTxt.setColor(this.freeRerollAvailable ? '#88ffcc' : '#dddddd')
+      this.atkRerollTxt.setColor('#dddddd')
       this.atkRerollBtn.setInteractive({ useHandCursor: true })
     }
 
@@ -747,6 +874,9 @@ export class CombatScene extends Phaser.Scene {
     AudioSystem.play('attack')
 
     const atkVals = this.atkDice.map(d => d.value)
+    const tier = CombatEngine.comboTier(atkVals)
+    if (tier.calloutKey) this.fireTrigger('onCombo')
+    this.fireTrigger('onAttack')
 
     this.atkDice.forEach(d => d.highlight(true))
     this.time.delayedCall(200, () => {
@@ -761,7 +891,7 @@ export class CombatScene extends Phaser.Scene {
       this.enemy,
       this.state,
       this.pendingHeroDef,
-      this.rerollsSpentThisTurn,
+      this.turnOutcome,
     )
     this.pendingHeroDef = result.defTotal
     this.setHeroDef(result.defTotal)
@@ -956,7 +1086,9 @@ export class CombatScene extends Phaser.Scene {
   private onEnemyKilled() {
     const enemyRestX = this.enemyArenaX
 
+    this.fireTrigger('onKill')
     applyPassiveOnKill(this.state)
+    this.heroHpBar.setValue(this.state.hp)
     SaveSystem.save('quicksave', this.state)
     AudioSystem.play('ko')
 
@@ -1043,7 +1175,7 @@ export class CombatScene extends Phaser.Scene {
   private resetPlayerTurn() {
     this.rerolls = { ...effectiveRerollMax(this.state) }
     this.rerollsSpentThisTurn = 0
-    this.freeRerollAvailable = this.state.characterName === 'Pícaro'
+    this.resetTriggerState()
     this.setHeroDef(this.pendingHeroDef)
     this.enemyHpBar.setDefense(this.enemy.totalDefense)
     this.lastCalloutKey = null

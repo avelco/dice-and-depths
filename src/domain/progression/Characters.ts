@@ -1,4 +1,5 @@
 import type { RunState } from './RunState'
+import { makeDie, type RunDie } from '../dice/Die'
 
 export interface CharacterKit {
   name: string
@@ -8,7 +9,7 @@ export interface CharacterKit {
   buff: string
   handicap: string
   maxHp: number
-  diceAtk: number
+  startingDice: RunDie[]
   rerollAtk: number
   startGold: number
 }
@@ -22,7 +23,11 @@ export const CHARACTERS: CharacterKit[] = [
     buff: 'Los combos suben un nivel de defensa',
     handicap: 'Solo 3 dados de ataque',
     maxHp: 50,
-    diceAtk: 3,
+    startingDice: [
+      makeDie('d0', 'bulwark'),
+      makeDie('d1'),
+      makeDie('d2'),
+    ],
     rerollAtk: 4,
     startGold: 0,
   },
@@ -33,7 +38,13 @@ export const CHARACTERS: CharacterKit[] = [
     buff: 'La mejor cara 5 o 6 cuenta doble en combo',
     handicap: 'Muy poca vida',
     maxHp: 20,
-    diceAtk: 5,
+    startingDice: [
+      makeDie('d0', 'arcane'),
+      makeDie('d1'),
+      makeDie('d2'),
+      makeDie('d3'),
+      makeDie('d4'),
+    ],
     rerollAtk: 4,
     startGold: 0,
   },
@@ -41,10 +52,14 @@ export const CHARACTERS: CharacterKit[] = [
     name: 'Pícaro',
     lore: 'Veloz y letal desde las sombras.',
     locked: false,
-    buff: 'El primer reintento del turno es gratis',
+    buff: 'Al tirar: +1 reintento',
     handicap: 'Poca vida y pocos dados',
     maxHp: 25,
-    diceAtk: 3,
+    startingDice: [
+      makeDie('d0', 'swift'),
+      makeDie('d1'),
+      makeDie('d2'),
+    ],
     rerollAtk: 4,
     startGold: 0,
   },
@@ -55,7 +70,13 @@ export const CHARACTERS: CharacterKit[] = [
     buff: 'La mitad del dano sobrante cura vida',
     handicap: 'Poca vida',
     maxHp: 25,
-    diceAtk: 5,
+    startingDice: [
+      makeDie('d0', 'mercy'),
+      makeDie('d1'),
+      makeDie('d2'),
+      makeDie('d3'),
+      makeDie('d4'),
+    ],
     rerollAtk: 4,
     startGold: 0,
   },
@@ -66,7 +87,13 @@ export const CHARACTERS: CharacterKit[] = [
     buff: 'Sin reintentos: +20% de dano',
     handicap: 'Solo 2 reintentos por turno',
     maxHp: 40,
-    diceAtk: 5,
+    startingDice: [
+      makeDie('d0', 'rage'),
+      makeDie('d1'),
+      makeDie('d2'),
+      makeDie('d3'),
+      makeDie('d4'),
+    ],
     rerollAtk: 2,
     startGold: 0,
   },
@@ -81,6 +108,9 @@ export function applyCharacterKit(state: RunState, kit: CharacterKit) {
   state.maxHp = kit.maxHp
   state.hp = kit.maxHp
   state.coins = kit.startGold
-  state.diceLoadout = { atk: kit.diceAtk }
+  // Deep-copy so run mutations don't leak into CHARACTERS definitions.
+  state.dice = kit.startingDice.map(d =>
+    makeDie(d.id, d.abilityId, [...d.faces] as RunDie['faces']),
+  )
   state.rerollMax = { atk: kit.rerollAtk }
 }

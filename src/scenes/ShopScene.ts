@@ -12,6 +12,7 @@ import { syncRunStateDerived } from '../domain/progression/RunState'
 import { AudioSystem } from '../systems/AudioSystem'
 import { MetaProgression } from '../domain/progression/MetaProgression'
 import { TutorialBanner } from '../ui/TutorialBanner'
+import { addDie, canAddDie } from '../domain/dice/DicePool'
 
 interface ShopOffer {
   label: string
@@ -150,9 +151,9 @@ export class ShopScene extends Phaser.Scene {
       {
         label: t('shop.diceAtk', { n: diceCost }),
         cost: diceCost,
-        enabled: rs.diceLoadout.atk < 6,
+        enabled: canAddDie(rs.dice),
         apply: () => {
-          rs.diceLoadout.atk = Math.min(6, rs.diceLoadout.atk + 1)
+          addDie(rs.dice)
         },
       },
     ]

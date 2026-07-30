@@ -4,9 +4,17 @@ import { CHARACTERS } from '../domain/progression/Characters'
 import { startCampaignRun } from '../domain/progression/startRun'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
-import { charBuff, charHandicap, charLore, charName, t } from '../i18n/I18n'
+import {
+  abilityDesc,
+  abilityName,
+  charHandicap,
+  charLore,
+  charName,
+  t,
+} from '../i18n/I18n'
 import { addBackButton } from '../ui/BackButton'
 import { enableTouchTarget } from '../ui/touchTarget'
+import { abilityColor } from '../ui/DieSprite'
 
 function isLocked(index: number): boolean {
   return CHARACTERS[index].locked
@@ -19,8 +27,10 @@ export class CharacterSelectScene extends Phaser.Scene {
   private nameText!: Phaser.GameObjects.Text
   private loreText!: Phaser.GameObjects.Text
   private statsText!: Phaser.GameObjects.Text
-  private strengthLabel!: Phaser.GameObjects.Text
-  private strengthText!: Phaser.GameObjects.Text
+  private specialLabel!: Phaser.GameObjects.Text
+  private specialName!: Phaser.GameObjects.Text
+  private specialDesc!: Phaser.GameObjects.Text
+  private specialDot!: Phaser.GameObjects.Graphics
   private weaknessLabel!: Phaser.GameObjects.Text
   private weaknessText!: Phaser.GameObjects.Text
   private lockedText!: Phaser.GameObjects.Text
@@ -117,14 +127,22 @@ export class CharacterSelectScene extends Phaser.Scene {
       wordWrap: { width: this.contentW - 20 },
     }).setOrigin(0.5, 0).setDepth(2)
 
-    this.strengthLabel = addPixelText(this, colX, y, t('charSelect.buff'), {
+    this.specialLabel = addPixelText(this, colX, y, t('charSelect.specialDie'), {
       fontSize: '8px',
-      color: '#66aa66',
+      color: '#aaccff',
     }).setOrigin(0, 0).setDepth(2)
 
-    this.strengthText = addPixelText(this, colX, y, '', {
+    this.specialDot = this.add.graphics().setDepth(3)
+
+    this.specialName = addPixelText(this, colX, y, '', {
       fontSize: '8px',
-      color: '#88cc88',
+      color: '#ffffff',
+      wordWrap: { width: this.contentW - 40 },
+    }).setOrigin(0, 0).setDepth(2)
+
+    this.specialDesc = addPixelText(this, colX, y, '', {
+      fontSize: '8px',
+      color: '#99bbdd',
       wordWrap: { width: this.contentW - 28 },
       align: 'left',
     }).setOrigin(0, 0).setDepth(2)
@@ -197,13 +215,16 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.statsText.setText(
       t('charSelect.statsLine', {
         hp: char.maxHp,
-        dice: char.diceAtk,
+        dice: char.startingDice.length,
         rerolls: char.rerollAtk,
       }),
     )
 
-    this.strengthLabel.setText(t('charSelect.buff'))
-    this.strengthText.setText(charBuff(char.name))
+    const abilityId =
+      char.startingDice.find(d => d.abilityId)?.abilityId ?? null
+    this.specialLabel.setText(t('charSelect.specialDie'))
+    this.specialName.setText(abilityId ? abilityName(abilityId) : '—')
+    this.specialDesc.setText(abilityId ? abilityDesc(abilityId) : '')
     this.weaknessLabel.setText(t('charSelect.handicap'))
     this.weaknessText.setText(charHandicap(char.name))
 
@@ -214,15 +235,24 @@ export class CharacterSelectScene extends Phaser.Scene {
       locked ? t('charSelect.hintLocked') : t('charSelect.hint'),
     )
 
-    // Layout inside card: stats → ventaja → debilidad
+    // Layout inside card: stats → dado especial → debilidad
     let y = this.panelTop + 12
     this.statsText.setPosition(cx, y)
     y += Math.ceil(this.statsText.height) + 12
 
-    this.strengthLabel.setPosition(colX, y)
-    y += Math.ceil(this.strengthLabel.height) + 2
-    this.strengthText.setPosition(colX, y)
-    y += Math.ceil(this.strengthText.height) + 10
+    this.specialLabel.setPosition(colX, y)
+    y += Math.ceil(this.specialLabel.height) + 4
+
+    const dotColor = abilityColor(abilityId) ?? 0x888888
+    const dotSize = 6
+    const nameX = colX + dotSize + 6
+    this.specialDot.clear()
+    this.specialDot.fillStyle(dotColor, 1)
+    this.specialDot.fillRect(colX, y + 1, dotSize, dotSize)
+    this.specialName.setPosition(nameX, y)
+    y += Math.ceil(this.specialName.height) + 2
+    this.specialDesc.setPosition(colX, y)
+    y += Math.ceil(this.specialDesc.height) + 10
 
     this.weaknessLabel.setPosition(colX, y)
     y += Math.ceil(this.weaknessLabel.height) + 2
@@ -241,7 +271,9 @@ export class CharacterSelectScene extends Phaser.Scene {
     const alpha = locked ? 0.75 : 1
     this.loreText.setAlpha(alpha)
     this.statsText.setAlpha(alpha)
-    this.strengthText.setAlpha(alpha)
+    this.specialName.setAlpha(alpha)
+    this.specialDesc.setAlpha(alpha)
+    this.specialDot.setAlpha(alpha)
     this.weaknessText.setAlpha(alpha)
   }
 

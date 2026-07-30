@@ -55,6 +55,14 @@ export function passiveDesc(id: string): string {
   return tKey(`passive.${id}.desc`, '')
 }
 
+export function abilityName(id: string): string {
+  return tKey(`ability.${id}.name`, id)
+}
+
+export function abilityDesc(id: string): string {
+  return tKey(`ability.${id}.desc`, '')
+}
+
 export function enemyName(id: string): string {
   return tKey(`enemy.${id}`, id)
 }

@@ -7,7 +7,7 @@ import { addPixelText } from './ui/pixelText'
 export function renderDebugHeader(scene: Phaser.Scene, rs: RunState) {
   syncRunStateDerived(rs)
   const gold = MetaProgression.getGold()
-  const header = `P${rs.floor} | ${rs.characterName} | HP ${rs.hp}/${rs.maxHp} | ${rs.coins}a | ${gold}g | D${rs.dice}`
+  const header = `P${rs.floor} | ${rs.characterName} | HP ${rs.hp}/${rs.maxHp} | ${rs.coins}a | ${gold}g | D${rs.dice.length}`
   addPixelText(scene, 4, 2, header, {
     fontSize: '8px',
     color: '#88ff88',

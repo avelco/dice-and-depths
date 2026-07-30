@@ -1,0 +1,38 @@
+[
+  {
+    "id": "bulwark",
+    "trigger": "onRoll",
+    "effect": "defTierUp",
+    "value": 1,
+    "maxPerTurn": 1
+  },
+  {
+    "id": "arcane",
+    "trigger": "onAttack",
+    "effect": "highFaceDouble",
+    "value": 1,
+    "maxPerTurn": 1
+  },
+  {
+    "id": "rage",
+    "trigger": "onAttack",
+    "effect": "atkMultPct",
+    "value": 20,
+    "cond": { "noRerolls": true },
+    "maxPerTurn": 1
+  },
+  {
+    "id": "mercy",
+    "trigger": "onAttack",
+    "effect": "overkillHealPct",
+    "value": 50,
+    "maxPerTurn": 1
+  },
+  {
+    "id": "swift",
+    "trigger": "onRoll",
+    "effect": "reroll",
+    "value": 1,
+    "maxPerTurn": 1
+  }
+]
