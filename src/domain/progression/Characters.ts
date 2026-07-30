@@ -3,7 +3,7 @@ import type { RunState } from './RunState'
 export interface CharacterKit {
   name: string
   lore: string
-  /** Cosmetic lock in select UI; Pícaro also checks meta unlock. */
+  /** Cosmetic lock in select UI. */
   locked: boolean
   buff: string
   handicap: string
@@ -19,8 +19,8 @@ export const CHARACTERS: CharacterKit[] = [
     name: 'Paladín',
     lore: 'Escudo sagrado del frente.',
     locked: false,
-    buff: '+20 HP · DEF de combo +1 nivel',
-    handicap: '3 dados ATK',
+    buff: 'Los combos suben un nivel de defensa',
+    handicap: 'Solo 3 dados de ataque',
     maxHp: 50,
     diceAtk: 3,
     rerollAtk: 4,
@@ -30,8 +30,8 @@ export const CHARACTERS: CharacterKit[] = [
     name: 'Mago',
     lore: 'Domina las artes arcanas.',
     locked: false,
-    buff: '5 dados · combo 5-6 x2',
-    handicap: '20 HP',
+    buff: 'La mejor cara 5 o 6 cuenta doble en combo',
+    handicap: 'Muy poca vida',
     maxHp: 20,
     diceAtk: 5,
     rerollAtk: 4,
@@ -40,9 +40,9 @@ export const CHARACTERS: CharacterKit[] = [
   {
     name: 'Pícaro',
     lore: 'Veloz y letal desde las sombras.',
-    locked: true,
-    buff: '1er reroll gratis',
-    handicap: '25 HP y 3 dados ATK',
+    locked: false,
+    buff: 'El primer reintento del turno es gratis',
+    handicap: 'Poca vida y pocos dados',
     maxHp: 25,
     diceAtk: 3,
     rerollAtk: 4,
@@ -52,8 +52,8 @@ export const CHARACTERS: CharacterKit[] = [
     name: 'Clérigo',
     lore: 'Sanador y protector divino.',
     locked: false,
-    buff: '5 dados · overkill cura',
-    handicap: '25 HP',
+    buff: 'La mitad del dano sobrante cura vida',
+    handicap: 'Poca vida',
     maxHp: 25,
     diceAtk: 5,
     rerollAtk: 4,
@@ -63,8 +63,8 @@ export const CHARACTERS: CharacterKit[] = [
     name: 'Bárbaro',
     lore: 'Furia imparable en batalla.',
     locked: false,
-    buff: 'sin reroll +20% daño',
-    handicap: '2 rerolls ATK',
+    buff: 'Sin reintentos: +20% de dano',
+    handicap: 'Solo 2 reintentos por turno',
     maxHp: 40,
     diceAtk: 5,
     rerollAtk: 2,

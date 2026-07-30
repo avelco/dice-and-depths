@@ -3,14 +3,12 @@ import { addPixelText } from './pixelText'
 import { t } from '../i18n/I18n'
 import { AudioSystem } from '../systems/AudioSystem'
 
-/** Top-left back chip — large enough for thumbs on a 270×480 canvas. */
+/** Bottom-left back chip — large enough for thumbs on a 270×480 canvas. */
 export function addBackButton(
   scene: Phaser.Scene,
   onBack: () => void,
   opts: { x?: number; y?: number; labelKey?: 'ui.back' | 'combat.esc' } = {},
 ) {
-  const x = opts.x ?? 4
-  const y = opts.y ?? 4
   const key = opts.labelKey ?? 'ui.back'
   const label = t(key)
 
@@ -29,6 +27,11 @@ export function addBackButton(
   // Thumb-friendly hit box (game px); scales up with FIT on phones.
   const hitW = Math.max(44, bw + 10)
   const hitH = Math.max(36, bh + 10)
+
+  const { height } = scene.cameras.main
+  // Default: bottom-left corner.
+  const x = opts.x ?? 4
+  const y = opts.y ?? height - bh - 4
 
   const root = scene.add.container(x, y).setDepth(50).setScrollFactor(0)
 

@@ -35,14 +35,10 @@ export interface MetaLoadout {
 }
 
 export interface MetaSave {
-  metaDust: number
   /** Global game currency (oro). Persists between runs. */
   gold: number
   /** Next floor to start when descending (1–5). */
   campaignFloor: number
-  unlockExtraMaxHp: boolean
-  unlockExtraGold: boolean
-  unlockRogue: boolean
   inventory: MetaInventory
   loadout: MetaLoadout
   locale: Locale
@@ -63,12 +59,6 @@ export interface MetaSave {
 }
 
 const META_KEY = 'dnd_meta_v1'
-
-const UNLOCK_COST = {
-  extraMaxHp: 50,
-  extraGold: 40,
-  unlockRogue: 80,
-} as const
 
 function emptyGearLoadout(): GearLoadoutMap {
   return { hat: null, cape: null, belt: null, ring: null, boots: null }
@@ -149,12 +139,8 @@ function normalizeGearForge(raw: unknown): Record<string, GearForgeState> {
 
 function defaultMeta(): MetaSave {
   return {
-    metaDust: 0,
     gold: 0,
     campaignFloor: 1,
-    unlockExtraMaxHp: false,
-    unlockExtraGold: false,
-    unlockRogue: false,
     inventory: starterInventory(),
     loadout: {
       gear: emptyGearLoadout(),
@@ -241,12 +227,8 @@ export class MetaProgression {
         runes: normalizeRuneLoadout(data.loadout?.runes),
       }
       const meta: MetaSave = {
-        metaDust: data.metaDust ?? 0,
         gold: typeof data.gold === 'number' ? data.gold : 0,
         campaignFloor: normalizeCampaignFloor(data.campaignFloor),
-        unlockExtraMaxHp: !!data.unlockExtraMaxHp,
-        unlockExtraGold: !!data.unlockExtraGold,
-        unlockRogue: !!data.unlockRogue,
         inventory: normalizeInventory(data.inventory, loadout),
         loadout,
         locale: normalizeLocale(data.locale),
@@ -275,17 +257,8 @@ export class MetaProgression {
     localStorage.setItem(META_KEY, JSON.stringify(meta))
   }
 
-  static dustForRun(floor: number, coins: number): number {
-    return Math.floor(floor * 3 + coins / 10)
-  }
-
   static applyStartBonuses(state: import('./RunState').RunState) {
     const meta = MetaProgression.load()
-    if (meta.unlockExtraMaxHp) {
-      state.maxHp += 5
-      state.hp = Math.min(state.hp + 5, state.maxHp)
-    }
-    if (meta.unlockExtraGold) state.coins += 10
     for (const pid of unlockedPassiveIds(meta)) {
       if (!state.passives.includes(pid)) state.passives.push(pid)
     }
@@ -424,31 +397,6 @@ export class MetaProgression {
     meta.gold -= amount
     MetaProgression.save(meta)
     return true
-  }
-
-  static tryPurchase(unlock: keyof typeof UNLOCK_COST): boolean {
-    const meta = MetaProgression.load()
-    const cost = UNLOCK_COST[unlock]
-    if (meta.metaDust < cost) return false
-
-    if (unlock === 'extraMaxHp' && meta.unlockExtraMaxHp) return false
-    if (unlock === 'extraGold' && meta.unlockExtraGold) return false
-    if (unlock === 'unlockRogue' && meta.unlockRogue) return false
-
-    meta.metaDust -= cost
-    if (unlock === 'extraMaxHp') meta.unlockExtraMaxHp = true
-    if (unlock === 'extraGold') meta.unlockExtraGold = true
-    if (unlock === 'unlockRogue') meta.unlockRogue = true
-    MetaProgression.save(meta)
-    return true
-  }
-
-  static getUnlockCost(unlock: keyof typeof UNLOCK_COST): number {
-    return UNLOCK_COST[unlock]
-  }
-
-  static isRogueUnlocked(): boolean {
-    return MetaProgression.load().unlockRogue
   }
 
   static setLocale(locale: Locale) {

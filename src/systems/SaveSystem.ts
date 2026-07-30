@@ -118,6 +118,11 @@ export class SaveSystem {
     localStorage.removeItem(PREFIX + key)
   }
 
+  /** End the current run permanently (no resume from quicksave). */
+  static abandonQuicksave(): void {
+    SaveSystem.delete('quicksave')
+  }
+
   static saveToSlot(slot: number, state: RunState): void {
     SaveSystem.save(`slot_${slot}`, state)
   }

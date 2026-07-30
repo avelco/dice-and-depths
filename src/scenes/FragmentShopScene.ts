@@ -155,7 +155,6 @@ export class FragmentShopScene extends Phaser.Scene {
 
     const result = advanceFloorAfterBoss(this.state)
     if (result === 'victory') {
-      this.state.lastDustEarned = 0
       SaveSystem.save('quicksave', this.state)
       this.scene.start('GameOverScene', { runState: this.state, victory: true })
       return

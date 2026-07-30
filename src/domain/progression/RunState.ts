@@ -45,7 +45,6 @@ export class RunState {
   secondWindUsedThisFloor = false
   pendingNodeKind: MapNodeKind | null = null
   pendingRewardTier: RewardTier = 'normal'
-  lastDustEarned = 0
 
   /** Flat DEF from meta gear loadout (frozen at run start). */
   bonusDefFlat = 0

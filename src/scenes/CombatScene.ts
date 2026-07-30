@@ -17,8 +17,9 @@ import { rollCombatSouls } from '../domain/progression/CombatRewards'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { charName, enemyName, t, type TranslationKey } from '../i18n/I18n'
-import { enableTouchTarget, minZoneSize } from '../ui/touchTarget'
+import { minZoneSize } from '../ui/touchTarget'
 import { addBackButton } from '../ui/BackButton'
+import { showConfirmModal } from '../ui/ConfirmModal'
 import { preferReducedMotion } from '../systems/Device'
 import { MetaProgression } from '../domain/progression/MetaProgression'
 import { TutorialBanner } from '../ui/TutorialBanner'
@@ -83,7 +84,6 @@ export class CombatScene extends Phaser.Scene {
   private heroHpBar!: HealthBar
   private heroDefBar!: HealthBar
   private enemyHpBar!: HealthBar
-  private enemyDefBar!: HealthBar
 
   private atkDice: DieSprite[] = []
 
@@ -125,6 +125,7 @@ export class CombatScene extends Phaser.Scene {
   private diceRowY = 0
   private rainbowTimer: Phaser.Time.TimerEvent | null = null
   private rainbowHue = 0
+  private abandonOpen = false
 
   constructor() {
     super('CombatScene')
@@ -148,14 +149,13 @@ export class CombatScene extends Phaser.Scene {
     this.rainbowTimer?.remove(false)
     this.rainbowTimer = null
     this.rainbowHue = 0
+    this.abandonOpen = false
     this.shakeTimers.clear()
     this.shakeRests.clear()
     this.children.removeAll(true)
   }
 
   create() {
-    const { width, height } = this.cameras.main
-
     const rs = getRunState(this)
     if (!rs) {
       this.scene.start('MenuScene')
@@ -175,15 +175,30 @@ export class CombatScene extends Phaser.Scene {
     this.drawSection3()
     this.preRollAll(() => this.enableAttack())
 
-    addBackButton(
-      this,
-      () => this.scene.start('MapScene', { runState: this.state }),
-      { labelKey: 'combat.esc' },
-    )
+    addBackButton(this, () => this.promptAbandonFight(), { labelKey: 'combat.esc' })
 
     bindSceneKeys(this, {
-      'keydown-ESC': () =>
-        this.scene.start('MapScene', { runState: this.state }),
+      'keydown-ESC': () => this.promptAbandonFight(),
+    })
+  }
+
+  /** Leaving mid-fight ends the run: wipe quicksave and go to defeat. */
+  private promptAbandonFight() {
+    if (this.abandonOpen) return
+    this.abandonOpen = true
+    showConfirmModal(this, {
+      title: t('combat.abandonTitle'),
+      body: t('combat.abandonBody'),
+      confirmLabel: t('combat.abandonConfirm'),
+      cancelLabel: t('combat.abandonCancel'),
+      onCancel: () => {
+        this.abandonOpen = false
+      },
+      onConfirm: () => {
+        this.abandonOpen = false
+        SaveSystem.abandonQuicksave()
+        this.scene.start('GameOverScene', { runState: this.state, victory: false })
+      },
     })
   }
 
@@ -279,8 +294,7 @@ export class CombatScene extends Phaser.Scene {
   private bindEnemyBars() {
     this.enemyHpBar.setMax(this.enemy.maxHp)
     this.enemyHpBar.setValue(this.enemy.hp)
-    this.enemyDefBar.setMax(Math.max(this.enemy.defense + 4, 8))
-    this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.enemyHpBar.setDefense(this.enemy.totalDefense)
     this.enemyNameText.setText(enemyName(this.enemy.templateId))
   }
 
@@ -306,7 +320,7 @@ export class CombatScene extends Phaser.Scene {
     const cx = this.cameras.main.width / 2
     const barH = BAR_H
 
-    // Enemy bars above the far fighter
+    // Enemy HP above the far fighter; DEF is flat armor (label), not a shield bar.
     const enemyBarX = cx - ENEMY_BAR_W / 2
     let y = 8
     this.enemyHpBar = new HealthBar(
@@ -315,14 +329,7 @@ export class CombatScene extends Phaser.Scene {
     )
     this.enemyHpBar.setDepth(5)
     this.enemyHpBar.setValue(this.enemy.hp)
-
-    y += barH + 3
-    this.enemyDefBar = new HealthBar(
-      this, enemyBarX, y, ENEMY_BAR_W, barH,
-      Math.max(this.enemy.defense + 4, 8), DEF_COLOR, '',
-    )
-    this.enemyDefBar.setDepth(5)
-    this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.enemyHpBar.setDefense(this.enemy.totalDefense)
 
     // Hero bars where ATACAR used to sit (under the hero)
     const heroBarX = cx - HERO_BAR_W / 2
@@ -634,6 +641,7 @@ export class CombatScene extends Phaser.Scene {
     if (atk.power.combo > 0) atkParts.push(`+${atk.power.combo}`)
     if (atk.mageBonus > 0) atkParts.push(`+${atk.mageBonus}`)
     if (atk.barbBonus > 0) atkParts.push(`+${atk.barbBonus}`)
+    if (enemyDef > 0) atkParts.push(`-${enemyDef}`)
     if (heavy) atkParts.push('+2')
     if (this.state.bonusDmgFlat > 0) atkParts.push(`+${this.state.bonusDmgFlat}`)
 
@@ -757,7 +765,7 @@ export class CombatScene extends Phaser.Scene {
     )
     this.pendingHeroDef = result.defTotal
     this.setHeroDef(result.defTotal)
-    this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.enemyHpBar.setDefense(this.enemy.totalDefense)
     this.updatePreviews()
 
     const enemyX = this.enemyArenaX
@@ -1037,7 +1045,7 @@ export class CombatScene extends Phaser.Scene {
     this.rerollsSpentThisTurn = 0
     this.freeRerollAvailable = this.state.characterName === 'Pícaro'
     this.setHeroDef(this.pendingHeroDef)
-    this.enemyDefBar.setValue(this.enemy.totalDefense)
+    this.enemyHpBar.setDefense(this.enemy.totalDefense)
     this.lastCalloutKey = null
     this.preRollAll(() => this.enableAttack())
   }
