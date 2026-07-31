@@ -1,0 +1,20 @@
+[
+  { "id": "strike", "rarity": "common", "effects": [{ "type": "damage", "value": 4 }] },
+  { "id": "bash", "rarity": "common", "effects": [{ "type": "damage", "value": 6 }] },
+  { "id": "slash", "rarity": "rare", "effects": [{ "type": "damage", "value": 9 }] },
+  { "id": "crush", "rarity": "legendary", "effects": [{ "type": "damage", "value": 14 }] },
+  { "id": "guard", "rarity": "common", "effects": [{ "type": "shield", "value": 4 }] },
+  { "id": "barrier", "rarity": "common", "effects": [{ "type": "shield", "value": 6 }] },
+  { "id": "fortify", "rarity": "rare", "effects": [{ "type": "shield", "value": 10 }] },
+  { "id": "aegis", "rarity": "legendary", "effects": [{ "type": "shield", "value": 14 }] },
+  { "id": "toxin", "rarity": "common", "effects": [{ "type": "poison", "value": 2 }] },
+  { "id": "venom", "rarity": "common", "effects": [{ "type": "poison", "value": 3 }] },
+  { "id": "plague", "rarity": "rare", "effects": [{ "type": "poison", "value": 5 }] },
+  { "id": "blight", "rarity": "legendary", "effects": [{ "type": "poison", "value": 8 }] },
+  { "id": "salve", "rarity": "common", "effects": [{ "type": "heal", "value": 3 }] },
+  { "id": "mend", "rarity": "common", "effects": [{ "type": "heal", "value": 5 }] },
+  { "id": "restore", "rarity": "rare", "effects": [{ "type": "heal", "value": 8 }] },
+  { "id": "revive", "rarity": "legendary", "effects": [{ "type": "heal", "value": 12 }] },
+  { "id": "poison_stab", "rarity": "rare", "effects": [{ "type": "damage", "value": 4 }, { "type": "poison", "value": 2 }] },
+  { "id": "shield_bash", "rarity": "rare", "effects": [{ "type": "damage", "value": 3 }, { "type": "shield", "value": 4 }] }
+]

@@ -1,289 +1,97 @@
-import { Enemy } from '../enemies/Enemy'
+import {
+  previewCards,
+  resolveCardPlays,
+  tickPoison,
+  type CombatActor,
+  type TurnPreview,
+} from '../cards/CardEffects'
+import type { RunCard } from '../cards/Card'
 import type { RunState } from '../progression/RunState'
 import { hasPassive } from '../progression/Passives'
-import {
-  emptyOutcome,
-  type TriggerOutcome,
-} from '../dice/DiceAbilities'
 
-export interface CombatResult {
-  atkTotal: number
-  atkCombo: number
-  defTotal: number
-  defCombo: number
-  rawDamage: number
-  finalDamage: number
-  heal: number
-  killed: boolean
-  phaseBlocked: boolean
+export type { CombatActor, TurnPreview }
+
+export interface CombatFighter extends CombatActor {
+  bonusDmgFlat: number
 }
 
-export interface DicePower {
-  total: number
-  combo: number
-  bestMatch: number
-  isMonster: boolean
+export interface TurnResolveResult {
+  preview: TurnPreview
+  applied: TurnPreview
+  targetDead: boolean
+  selfDead: boolean
 }
 
-export interface DefensePower {
-  total: number
-  parts: string[]
-}
-
-export interface HeroAtkBreakdown {
-  power: DicePower
-  bonusDamage: number
-  atkMultPct: number
-  total: number
-}
-
-export interface EnemyTurnResult {
-  damage: number
-  blocked: number
-  overflow: number
-  remainingDef: number
-  goldStolen: number
-}
-
-export type ComboCalloutKey =
-  | 'combat.combo.awesome'
-  | 'combat.combo.triple'
-  | 'combat.combo.super'
-  | 'combat.combo.hyper'
-  | 'combat.combo.brutal'
-  | 'combat.combo.master'
-  | 'combat.combo.killer'
-  | 'combat.combo.king'
-  | 'combat.combo.monster'
-
-export interface ComboTier {
-  bestMatch: number
-  isMonster: boolean
-  calloutKey: ComboCalloutKey | null
+export function toFighter(
+  hp: number,
+  maxHp: number,
+  shield: number,
+  poison: number,
+  bonusDmgFlat = 0,
+): CombatFighter {
+  return { hp, maxHp, shield, poison, bonusDmgFlat }
 }
 
 export class CombatEngine {
-  /** ATK = sum + Σ (count × face) for each face with count ≥ 2. */
-  static computePower(dice: number[]): DicePower {
-    const sum = dice.reduce((a, b) => a + b, 0)
-    if (dice.length <= 1) {
-      return { total: sum, combo: 0, bestMatch: dice.length, isMonster: false }
-    }
-
-    const counts = new Map<number, number>()
-    for (const v of dice) counts.set(v, (counts.get(v) ?? 0) + 1)
-
-    let combo = 0
-    let bestMatch = 1
-    for (const [value, count] of counts) {
-      if (count > bestMatch) bestMatch = count
-      if (count >= 2) combo += value * count
-    }
-
-    const isMonster = bestMatch === dice.length && dice.length >= 2
-    return { total: sum + combo, combo, bestMatch, isMonster }
+  static preview(cards: RunCard[]): TurnPreview {
+    return previewCards(cards)
   }
 
   /**
-   * Best face among 5–6 counts double.
-   * If that face is in a combo, bonus = its combo term (value×count); else +face.
+   * Tick poison on actor at start of their turn.
+   * Returns damage taken from poison.
    */
-  static mageHighFaceBonus(dice: number[]): number {
-    const counts = new Map<number, number>()
-    for (const v of dice) counts.set(v, (counts.get(v) ?? 0) + 1)
-    let bestFace = 0
-    for (const face of [6, 5]) {
-      if ((counts.get(face) ?? 0) > 0) {
-        bestFace = face
-        break
-      }
-    }
-    if (bestFace === 0) return 0
-    const count = counts.get(bestFace) ?? 0
-    return count >= 2 ? bestFace * count : bestFace
-  }
-
-  static heroAtkTotal(
-    dice: number[],
-    _state: RunState,
-    outcome: TriggerOutcome = emptyOutcome(),
-  ): HeroAtkBreakdown {
-    const power = CombatEngine.computePower(dice)
-    const faceBonus = outcome.highFaceDouble
-      ? CombatEngine.mageHighFaceBonus(dice)
-      : 0
-    const bonusDamage = outcome.bonusDamage + faceBonus
-    const atkMultPct = outcome.atkMultPct
-    const multBonus =
-      atkMultPct > 0 ? Math.floor(power.total * (atkMultPct / 100)) : 0
-    return {
-      power,
-      bonusDamage,
-      atkMultPct,
-      total: power.total + bonusDamage + multBonus,
-    }
-  }
-
-  /** Callout tier from dice faces. Null if no match (bestMatch < 2). */
-  static comboTier(dice: number[]): ComboTier {
-    const { bestMatch, isMonster } = CombatEngine.computePower(dice)
-    if (bestMatch < 2) {
-      return { bestMatch, isMonster: false, calloutKey: null }
-    }
-    if (isMonster) {
-      return { bestMatch, isMonster: true, calloutKey: 'combat.combo.monster' }
-    }
-    return {
-      bestMatch,
-      isMonster: false,
-      calloutKey: CombatEngine.calloutForMatch(bestMatch),
-    }
-  }
-
-  static calloutForMatch(bestMatch: number): ComboCalloutKey | null {
-    if (bestMatch < 2) return null
-    if (bestMatch === 2) return 'combat.combo.awesome'
-    if (bestMatch === 3) return 'combat.combo.triple'
-    if (bestMatch === 4) return 'combat.combo.super'
-    if (bestMatch === 5) return 'combat.combo.hyper'
-    if (bestMatch === 6) return 'combat.combo.brutal'
-    if (bestMatch === 7) return 'combat.combo.master'
-    if (bestMatch === 8) return 'combat.combo.killer'
-    return 'combat.combo.king'
+  static startTurnPoison(actor: CombatActor): number {
+    return tickPoison(actor)
   }
 
   /**
-   * DEF from matching dice only: pair×1, trio×3, quad+×6.
-   * With defTierUp: pair×3, trio×6, quad+×12.
+   * Resolve slotted cards. Flat bonus damage from loadout is added once
+   * after card damage if any damage card was played.
    */
-  static computeDefense(
-    dice: number[],
-    opts?: { defTierUp?: boolean },
-  ): DefensePower {
-    const counts = new Map<number, number>()
-    for (const v of dice) counts.set(v, (counts.get(v) ?? 0) + 1)
+  static resolveTurn(
+    cards: RunCard[],
+    self: CombatFighter,
+    target: CombatFighter,
+    opts?: { heavyHit?: boolean },
+  ): TurnResolveResult {
+    const preview = previewCards(cards)
+    const applied = resolveCardPlays(cards, self, target)
 
-    let total = 0
-    const parts: string[] = []
-    const values = [...counts.keys()].sort((a, b) => a - b)
-    for (const value of values) {
-      const count = counts.get(value) ?? 0
-      if (count < 2) continue
-      let mult = count >= 4 ? 6 : count === 3 ? 3 : 1
-      if (opts?.defTierUp) mult = count >= 4 ? 12 : count === 3 ? 6 : 3
-      total += value * mult
-      parts.push(`${value}x${count >= 4 ? 4 : count}`)
+    if (preview.damage > 0 && self.bonusDmgFlat > 0) {
+      const extra = applyFlat(target, self.bonusDmgFlat)
+      applied.damage += extra
     }
-    return { total, parts }
+    if (preview.damage > 0 && opts?.heavyHit) {
+      applied.damage += applyFlat(target, 2)
+    }
+
+    return {
+      preview,
+      applied,
+      targetDead: target.hp <= 0,
+      selfDead: self.hp <= 0,
+    }
   }
 
-  static heroDefTotal(
-    atkDice: number[],
+  static resolvePlayerTurn(
+    cards: RunCard[],
     state: RunState,
-    outcome: TriggerOutcome = emptyOutcome(),
-  ): number {
-    let total = CombatEngine.computeDefense(atkDice, {
-      defTierUp: outcome.defTierUp,
-    }).total
-    if (hasPassive(state, 'iron_skin')) total += 2
-    total += state.bonusDefFlat
-    total += outcome.bonusShield
-    return total
-  }
-
-  static resolve(
-    atkDice: number[],
-    enemy: Enemy,
-    state: RunState,
-    carriedDef = 0,
-    outcome: TriggerOutcome = emptyOutcome(),
-  ): CombatResult {
-    const atk = CombatEngine.heroAtkTotal(atkDice, state, outcome)
-    const def = CombatEngine.computeDefense(atkDice, {
-      defTierUp: outcome.defTierUp,
+    hero: CombatFighter,
+    enemy: CombatFighter,
+  ): TurnResolveResult {
+    hero.bonusDmgFlat = state.bonusDmgFlat
+    return CombatEngine.resolveTurn(cards, hero, enemy, {
+      heavyHit: hasPassive(state, 'heavy_hit'),
     })
-    const rollDef = CombatEngine.heroDefTotal(atkDice, state, outcome)
-    const defTotal = carriedDef + rollDef
-
-    if (enemy.skill === 'phase' && Math.random() < 0.25) {
-      return {
-        atkTotal: atk.total,
-        atkCombo: atk.power.combo,
-        defTotal,
-        defCombo: def.total,
-        rawDamage: 0,
-        finalDamage: 0,
-        heal: 0,
-        killed: false,
-        phaseBlocked: true,
-      }
-    }
-
-    const rawDamage = Math.max(1, atk.total - enemy.totalDefense)
-    let finalDamage = rawDamage
-    if (hasPassive(state, 'heavy_hit')) finalDamage += 2
-    finalDamage += state.bonusDmgFlat
-
-    const hpBefore = enemy.hp
-    enemy.hp = Math.max(0, enemy.hp - finalDamage)
-
-    let heal = outcome.heal
-    if (outcome.overkillHealPct > 0) {
-      const overkill = Math.max(0, finalDamage - hpBefore)
-      heal += Math.floor(overkill * (outcome.overkillHealPct / 100))
-    }
-    if (heal > 0) {
-      state.hp = Math.min(state.maxHp, state.hp + heal)
-    }
-
-    if (enemy.skill === 'split' && enemy.alive) {
-      enemy.bonusDef += 2
-    }
-
-    return {
-      atkTotal: atk.total,
-      atkCombo: atk.power.combo,
-      defTotal,
-      defCombo: def.total,
-      rawDamage,
-      finalDamage,
-      heal,
-      killed: !enemy.alive,
-      phaseBlocked: false,
-    }
   }
+}
 
-  static enemyAttack(
-    atkDice: number[],
-    heroDefense: number,
-    enemy: Enemy,
-  ): EnemyTurnResult {
-    enemy.turnCount += 1
-    const power = CombatEngine.computePower(atkDice)
-    let enemyAtk = power.total
-
-    if (enemy.skill === 'slam' && enemy.turnCount % 2 === 0) {
-      enemyAtk *= 2
-    }
-
-    // bone_toss: only half the shield can absorb; the rest is pierce
-    let absorbCap = heroDefense
-    if (enemy.skill === 'bone_toss') {
-      absorbCap = Math.floor(heroDefense * 0.5)
-    }
-
-    const blocked = Math.min(absorbCap, enemyAtk)
-    const overflow = Math.max(0, enemyAtk - absorbCap)
-    // Never leave shield up if HP was hit (pierce / break)
-    const remainingDef = overflow > 0 ? 0 : Math.max(0, heroDefense - blocked)
-
-    return { damage: enemyAtk, blocked, overflow, remainingDef, goldStolen: 0 }
-  }
-
-  static applySteal(state: RunState, overflow: number): number {
-    if (overflow <= 0) return 0
-    const stolen = Math.min(5, state.coins)
-    state.coins -= stolen
-    return stolen
-  }
+function applyFlat(target: CombatActor, amount: number): number {
+  if (amount <= 0) return 0
+  const absorbed = Math.min(target.shield, amount)
+  target.shield -= absorbed
+  const hpLoss = amount - absorbed
+  target.hp = Math.max(0, target.hp - hpLoss)
+  return hpLoss
 }

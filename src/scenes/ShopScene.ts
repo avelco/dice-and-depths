@@ -12,7 +12,6 @@ import { syncRunStateDerived } from '../domain/progression/RunState'
 import { AudioSystem } from '../systems/AudioSystem'
 import { MetaProgression } from '../domain/progression/MetaProgression'
 import { TutorialBanner } from '../ui/TutorialBanner'
-import { addDie, canAddDie } from '../domain/dice/DicePool'
 
 interface ShopOffer {
   label: string
@@ -119,8 +118,7 @@ export class ShopScene extends Phaser.Scene {
   private postCombatOffers(rs: RunState, disc: number): ShopOffer[] {
     const healCost = Math.floor(18 * disc)
     const defCost = Math.floor(22 * disc)
-    const rerollCost = Math.floor(30 * disc)
-    const diceCost = Math.floor(40 * disc)
+    const dmgCost = Math.floor(30 * disc)
     const healAmt = Math.max(1, Math.floor(rs.maxHp * 0.25))
 
     return [
@@ -138,22 +136,15 @@ export class ShopScene extends Phaser.Scene {
         enabled: true,
         apply: () => {
           rs.bonusDefFlat += 1
+          rs.heroShield += 1
         },
       },
       {
-        label: t('shop.rerollAtk', { n: rerollCost }),
-        cost: rerollCost,
-        enabled: rs.rerollMax.atk < 8,
+        label: t('shop.dmg', { n: dmgCost }),
+        cost: dmgCost,
+        enabled: true,
         apply: () => {
-          rs.rerollMax.atk = Math.min(8, rs.rerollMax.atk + 1)
-        },
-      },
-      {
-        label: t('shop.diceAtk', { n: diceCost }),
-        cost: diceCost,
-        enabled: canAddDie(rs.dice),
-        apply: () => {
-          addDie(rs.dice)
+          rs.bonusDmgFlat += 1
         },
       },
     ]
@@ -161,7 +152,7 @@ export class ShopScene extends Phaser.Scene {
 
   private mapShopOffers(rs: RunState, disc: number): ShopOffer[] {
     const healCost = Math.floor(20 * disc)
-    const rerollCost = Math.floor(35 * disc)
+    const dmgCost = Math.floor(35 * disc)
     const passiveCost = Math.floor(50 * disc)
     const [pid] = pickRandomPassiveIds(1, rs.passives, () => Math.random())
 
@@ -175,11 +166,11 @@ export class ShopScene extends Phaser.Scene {
         },
       },
       {
-        label: t('shop.rerollAtk', { n: rerollCost }),
-        cost: rerollCost,
-        enabled: rs.rerollMax.atk < 8,
+        label: t('shop.dmg', { n: dmgCost }),
+        cost: dmgCost,
+        enabled: true,
         apply: () => {
-          rs.rerollMax.atk = Math.min(8, rs.rerollMax.atk + 1)
+          rs.bonusDmgFlat += 1
         },
       },
       {

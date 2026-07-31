@@ -49,7 +49,11 @@ export class MenuScene extends Phaser.Scene {
     MetaProgression.load()
     syncRotateHintLocale()
 
-    // Brand-new players: skip hub and drop into floor 1 as Paladín.
+    // Brand-new players: open starter packs once, then floor 1.
+    if (!MetaProgression.hasOpenedStarterPacks()) {
+      this.scene.start('PackOpenScene', { mode: 'starter', characterName: 'Paladín' })
+      return
+    }
     if (!MetaProgression.isTutorialDone()) {
       const existing = SaveSystem.load('quicksave')
       const state =
@@ -81,6 +85,7 @@ export class MenuScene extends Phaser.Scene {
     const floor = MetaProgression.getCampaignFloor()
     const entries: ReadonlyArray<readonly [string, string]> = [
       [t('menu.descendFloor', { n: floor }), 'CharacterSelectScene'],
+      [t('menu.deck'), 'DeckScene'],
       [t('menu.inventory'), 'InventoryScene'],
       [t('menu.forge'), 'ForgeScene'],
       [t('menu.tree'), 'SkillTreeScene'],

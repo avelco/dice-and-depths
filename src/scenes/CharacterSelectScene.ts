@@ -5,16 +5,16 @@ import { startCampaignRun } from '../domain/progression/startRun'
 import { AudioSystem } from '../systems/AudioSystem'
 import { bindSceneKeys } from '../systems/bindSceneKeys'
 import {
-  abilityDesc,
-  abilityName,
   charHandicap,
   charLore,
   charName,
   t,
+  tKey,
 } from '../i18n/I18n'
 import { addBackButton } from '../ui/BackButton'
 import { enableTouchTarget } from '../ui/touchTarget'
-import { abilityColor } from '../ui/DieSprite'
+import { MetaProgression } from '../domain/progression/MetaProgression'
+import { describeCard } from '../ui/CardSprite'
 
 function isLocked(index: number): boolean {
   return CHARACTERS[index].locked
@@ -30,14 +30,12 @@ export class CharacterSelectScene extends Phaser.Scene {
   private specialLabel!: Phaser.GameObjects.Text
   private specialName!: Phaser.GameObjects.Text
   private specialDesc!: Phaser.GameObjects.Text
-  private specialDot!: Phaser.GameObjects.Graphics
   private weaknessLabel!: Phaser.GameObjects.Text
   private weaknessText!: Phaser.GameObjects.Text
   private lockedText!: Phaser.GameObjects.Text
   private leftArrow!: Phaser.GameObjects.Text
   private rightArrow!: Phaser.GameObjects.Text
   private startBtn!: Phaser.GameObjects.Text
-  private hintText!: Phaser.GameObjects.Text
   private panelGfx!: Phaser.GameObjects.Graphics
   private pageText!: Phaser.GameObjects.Text
 
@@ -82,10 +80,6 @@ export class CharacterSelectScene extends Phaser.Scene {
 
     this.leftArrow.on('pointerdown', () => this.navigate(-1))
     this.rightArrow.on('pointerdown', () => this.navigate(1))
-    this.leftArrow.on('pointerover', () => this.leftArrow.setColor('#ffffaa'))
-    this.leftArrow.on('pointerout', () => this.leftArrow.setColor('#ffffff'))
-    this.rightArrow.on('pointerover', () => this.rightArrow.setColor('#ffffaa'))
-    this.rightArrow.on('pointerout', () => this.rightArrow.setColor('#ffffff'))
 
     this.nameText = addPixelText(this, cx, nameY, '', {
       fontSize: '16px',
@@ -95,10 +89,6 @@ export class CharacterSelectScene extends Phaser.Scene {
     }).setOrigin(0.5)
     enableTouchTarget(this.nameText, { min: 28 })
     this.nameText.on('pointerdown', () => this.confirm())
-    this.nameText.on('pointerover', () => {
-      if (!isLocked(this.selectedIndex)) this.nameText.setColor('#ffffcc')
-    })
-    this.nameText.on('pointerout', () => this.nameText.setColor('#ffffff'))
 
     this.pageText = addPixelText(this, cx, nameY + 18, '', {
       fontSize: '8px',
@@ -112,12 +102,10 @@ export class CharacterSelectScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5, 0)
 
-    // Info card
     this.panelTop = nameY + 70
     this.panelGfx = this.add.graphics().setDepth(1)
 
-    const pad = 14
-    const colX = 24 + pad
+    const colX = 24 + 14
     let y = this.panelTop + 12
 
     this.statsText = addPixelText(this, cx, y, '', {
@@ -127,24 +115,21 @@ export class CharacterSelectScene extends Phaser.Scene {
       wordWrap: { width: this.contentW - 20 },
     }).setOrigin(0.5, 0).setDepth(2)
 
-    this.specialLabel = addPixelText(this, colX, y, t('charSelect.specialDie'), {
+    this.specialLabel = addPixelText(this, colX, y, t('charSelect.signature'), {
       fontSize: '8px',
       color: '#aaccff',
     }).setOrigin(0, 0).setDepth(2)
 
-    this.specialDot = this.add.graphics().setDepth(3)
-
     this.specialName = addPixelText(this, colX, y, '', {
       fontSize: '8px',
       color: '#ffffff',
-      wordWrap: { width: this.contentW - 40 },
+      wordWrap: { width: this.contentW - 28 },
     }).setOrigin(0, 0).setDepth(2)
 
     this.specialDesc = addPixelText(this, colX, y, '', {
       fontSize: '8px',
       color: '#99bbdd',
       wordWrap: { width: this.contentW - 28 },
-      align: 'left',
     }).setOrigin(0, 0).setDepth(2)
 
     this.weaknessLabel = addPixelText(this, colX, y, t('charSelect.handicap'), {
@@ -156,7 +141,6 @@ export class CharacterSelectScene extends Phaser.Scene {
       fontSize: '8px',
       color: '#cc8888',
       wordWrap: { width: this.contentW - 28 },
-      align: 'left',
     }).setOrigin(0, 0).setDepth(2)
 
     this.lockedText = addPixelText(this, cx, height - 78, '', {
@@ -170,17 +154,10 @@ export class CharacterSelectScene extends Phaser.Scene {
     }).setOrigin(0.5)
     enableTouchTarget(this.startBtn, { min: 32 })
     this.startBtn.on('pointerdown', () => this.confirm())
-    this.startBtn.on('pointerover', () => {
-      if (!isLocked(this.selectedIndex)) this.startBtn.setColor('#ccffcc')
-    })
-    this.startBtn.on('pointerout', () => this.refresh())
 
-    // Above the bottom-left back chip so they never overlap.
-    this.hintText = addPixelText(this, cx, height - 34, t('charSelect.hint'), {
+    addPixelText(this, cx, height - 34, t('charSelect.hint'), {
       fontSize: '8px',
       color: '#666666',
-      wordWrap: { width: width - 24 },
-      align: 'center',
     }).setOrigin(0.5)
 
     this.refresh()
@@ -208,52 +185,35 @@ export class CharacterSelectScene extends Phaser.Scene {
     const colX = (width - this.contentW) / 2 + 8
 
     this.nameText.setText(charName(char.name))
-    this.nameText.setColor('#ffffff')
     this.pageText.setText(`${this.selectedIndex + 1}/${CHARACTERS.length}`)
     this.loreText.setText(charLore(char.name))
 
     this.statsText.setText(
       t('charSelect.statsLine', {
         hp: char.maxHp,
-        dice: char.startingDice.length,
-        rerolls: char.rerollAtk,
+        slots: MetaProgression.getActionSlots(),
       }),
     )
 
-    const abilityId =
-      char.startingDice.find(d => d.abilityId)?.abilityId ?? null
-    this.specialLabel.setText(t('charSelect.specialDie'))
-    this.specialName.setText(abilityId ? abilityName(abilityId) : '—')
-    this.specialDesc.setText(abilityId ? abilityDesc(abilityId) : '')
-    this.weaknessLabel.setText(t('charSelect.handicap'))
+    const sig = char.signatureCards[0] ?? 'strike'
+    this.specialLabel.setText(t('charSelect.signature'))
+    this.specialName.setText(tKey(`card.${sig}.name`, sig))
+    this.specialDesc.setText(describeCard(sig))
     this.weaknessText.setText(charHandicap(char.name))
 
     this.lockedText.setText(locked ? t('charSelect.locked') : '')
     this.startBtn.setText(locked ? t('charSelect.blocked') : t('charSelect.descend'))
     this.startBtn.setColor(locked ? '#666666' : '#88cc88')
-    this.hintText.setText(
-      locked ? t('charSelect.hintLocked') : t('charSelect.hint'),
-    )
 
-    // Layout inside card: stats → dado especial → debilidad
     let y = this.panelTop + 12
     this.statsText.setPosition(cx, y)
     y += Math.ceil(this.statsText.height) + 12
-
     this.specialLabel.setPosition(colX, y)
     y += Math.ceil(this.specialLabel.height) + 4
-
-    const dotColor = abilityColor(abilityId) ?? 0x888888
-    const dotSize = 6
-    const nameX = colX + dotSize + 6
-    this.specialDot.clear()
-    this.specialDot.fillStyle(dotColor, 1)
-    this.specialDot.fillRect(colX, y + 1, dotSize, dotSize)
-    this.specialName.setPosition(nameX, y)
+    this.specialName.setPosition(colX, y)
     y += Math.ceil(this.specialName.height) + 2
     this.specialDesc.setPosition(colX, y)
     y += Math.ceil(this.specialDesc.height) + 10
-
     this.weaknessLabel.setPosition(colX, y)
     y += Math.ceil(this.weaknessLabel.height) + 2
     this.weaknessText.setPosition(colX, y)
@@ -266,15 +226,6 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.panelGfx.fillRoundedRect(panelX, this.panelTop, this.contentW, panelH, 4)
     this.panelGfx.lineStyle(1, locked ? 0x553333 : 0x445566, 1)
     this.panelGfx.strokeRoundedRect(panelX, this.panelTop, this.contentW, panelH, 4)
-
-    // Dim locked characters slightly
-    const alpha = locked ? 0.75 : 1
-    this.loreText.setAlpha(alpha)
-    this.statsText.setAlpha(alpha)
-    this.specialName.setAlpha(alpha)
-    this.specialDesc.setAlpha(alpha)
-    this.specialDot.setAlpha(alpha)
-    this.weaknessText.setAlpha(alpha)
   }
 
   private confirm() {
@@ -284,6 +235,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.inputLocked = true
     AudioSystem.unlock()
     AudioSystem.play('select')
+
+    if (!MetaProgression.hasOpenedStarterPacks()) {
+      this.scene.start('PackOpenScene', {
+        mode: 'starter',
+        characterName: char.name,
+      })
+      return
+    }
 
     const state = startCampaignRun(char.name)
     this.time.delayedCall(150, () => this.scene.start('MapScene', { runState: state }))

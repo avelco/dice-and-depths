@@ -15,6 +15,8 @@ import { InventoryScene } from './scenes/InventoryScene'
 import { SkillTreeScene } from './scenes/SkillTreeScene'
 import { FragmentShopScene } from './scenes/FragmentShopScene'
 import { OptionsScene } from './scenes/OptionsScene'
+import { PackOpenScene } from './scenes/PackOpenScene'
+import { DeckScene } from './scenes/DeckScene'
 import { createDebugState } from './debug'
 import { SaveSystem } from './systems/SaveSystem'
 import type { RunState } from './domain/progression/RunState'
@@ -61,6 +63,8 @@ const game = new Phaser.Game({
     SkillTreeScene,
     FragmentShopScene,
     OptionsScene,
+    PackOpenScene,
+    DeckScene,
   ],
   scale: {
     mode: Phaser.Scale.FIT,

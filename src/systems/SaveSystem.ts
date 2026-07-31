@@ -1,5 +1,6 @@
-import { RunState, syncRunStateDerived, type MapSnapshot, type RerollMax } from '../domain/progression/RunState'
-import { makeBasicDice, makeDie, STANDARD_FACES, type DieFaces, type RunDie } from '../domain/dice/Die'
+import { RunState, syncRunStateDerived, type MapSnapshot } from '../domain/progression/RunState'
+import { MetaProgression } from '../domain/progression/MetaProgression'
+import { DEFAULT_ACTION_SLOTS } from '../domain/cards/Deck'
 
 const PREFIX = 'dnd_save_'
 
@@ -11,37 +12,6 @@ export interface SaveSlot {
   characterName: string
 }
 
-function normalizeRerolls(raw: unknown): RerollMax {
-  const d = (raw ?? {}) as Partial<RerollMax>
-  return {
-    atk: typeof d.atk === 'number' ? d.atk : 4,
-  }
-}
-
-function normalizeDie(raw: unknown, fallbackId: string): RunDie {
-  const d = (raw ?? {}) as Partial<RunDie>
-  const faces =
-    Array.isArray(d.faces) && d.faces.length === 6
-      ? ([...d.faces] as DieFaces)
-      : ([...STANDARD_FACES] as DieFaces)
-  return makeDie(
-    typeof d.id === 'string' ? d.id : fallbackId,
-    typeof d.abilityId === 'string' ? d.abilityId : null,
-    faces,
-  )
-}
-
-/** v5: `dice: RunDie[]`. Legacy v4: `diceLoadout: { atk: number }`. */
-function normalizeDice(data: Record<string, unknown>): RunDie[] {
-  if (Array.isArray(data.dice) && data.dice.length > 0) {
-    return data.dice.map((d, i) => normalizeDie(d, `d${i}`))
-  }
-  const loadout = data.diceLoadout as { atk?: number } | undefined
-  const count =
-    typeof loadout?.atk === 'number' && loadout.atk > 0 ? loadout.atk : 4
-  return makeBasicDice(count)
-}
-
 function serialize(state: RunState) {
   return {
     floor: state.floor,
@@ -51,8 +21,8 @@ function serialize(state: RunState) {
     characterName: state.characterName,
     seed: state.seed,
     passives: state.passives,
-    dice: state.dice,
-    rerollMax: state.rerollMax,
+    deckDefs: state.deckDefs,
+    actionSlots: state.actionSlots,
     currentNodeId: state.currentNodeId,
     map: state.map,
     secondWindUsedThisFloor: state.secondWindUsedThisFloor,
@@ -60,15 +30,16 @@ function serialize(state: RunState) {
     pendingRewardTier: state.pendingRewardTier,
     bonusDefFlat: state.bonusDefFlat,
     bonusDmgFlat: state.bonusDmgFlat,
+    heroShield: state.heroShield,
+    heroPoison: state.heroPoison,
     savedAt: Date.now(),
-    version: 5,
+    version: 6,
   }
 }
 
 function deserialize(data: Record<string, unknown>): RunState {
   const state = new RunState()
   state.floor = (data.floor as number) ?? 1
-  // Migrate legacy run gold → coins
   state.coins =
     typeof data.coins === 'number'
       ? data.coins
@@ -78,12 +49,21 @@ function deserialize(data: Record<string, unknown>): RunState {
   state.maxHp = (data.maxHp as number) ?? 30
   state.hp = (data.hp as number) ?? state.maxHp
   const loadedName = (data.characterName as string) ?? 'Paladín'
-  // Legacy rename: Guerrero → Paladín
   state.characterName = loadedName === 'Guerrero' ? 'Paladín' : loadedName
   state.seed = (data.seed as number) ?? 0
   state.passives = (data.passives as string[]) ?? []
-  state.dice = normalizeDice(data)
-  state.rerollMax = normalizeRerolls(data.rerollMax)
+
+  // v6: deckDefs. Legacy v5 dice saves → fall back to meta active deck.
+  if (Array.isArray(data.deckDefs) && data.deckDefs.length > 0) {
+    state.deckDefs = data.deckDefs.filter((id): id is string => typeof id === 'string')
+  } else {
+    state.deckDefs = MetaProgression.getActiveDeck()
+  }
+  state.actionSlots =
+    typeof data.actionSlots === 'number'
+      ? Math.max(DEFAULT_ACTION_SLOTS, Math.floor(data.actionSlots))
+      : MetaProgression.getActionSlots()
+
   state.currentNodeId = (data.currentNodeId as number | null) ?? null
   state.map = (data.map as MapSnapshot | null) ?? null
   state.secondWindUsedThisFloor = !!(data.secondWindUsedThisFloor)
@@ -91,6 +71,8 @@ function deserialize(data: Record<string, unknown>): RunState {
   state.pendingRewardTier = (data.pendingRewardTier as RunState['pendingRewardTier']) ?? 'normal'
   state.bonusDefFlat = (data.bonusDefFlat as number) ?? 0
   state.bonusDmgFlat = (data.bonusDmgFlat as number) ?? 0
+  state.heroShield = (data.heroShield as number) ?? 0
+  state.heroPoison = (data.heroPoison as number) ?? 0
   syncRunStateDerived(state)
   return state
 }
@@ -136,7 +118,6 @@ export class SaveSystem {
     localStorage.removeItem(PREFIX + key)
   }
 
-  /** End the current run permanently (no resume from quicksave). */
   static abandonQuicksave(): void {
     SaveSystem.delete('quicksave')
   }

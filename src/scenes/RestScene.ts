@@ -37,7 +37,7 @@ export class RestScene extends Phaser.Scene {
       {
         label: t('rest.train'),
         apply: () => {
-          rs.rerollMax.atk = Math.min(8, rs.rerollMax.atk + 1)
+          rs.bonusDmgFlat += 1
         },
       },
     ]

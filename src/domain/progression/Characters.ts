@@ -1,100 +1,66 @@
 import type { RunState } from './RunState'
-import { makeDie, type RunDie } from '../dice/Die'
 
 export interface CharacterKit {
   name: string
   lore: string
-  /** Cosmetic lock in select UI. */
   locked: boolean
   buff: string
   handicap: string
   maxHp: number
-  startingDice: RunDie[]
-  rerollAtk: number
+  /** Signature card def ids preferred when building first deck. */
+  signatureCards: string[]
   startGold: number
 }
 
-/** Baseline: 30 HP · 4 ATK · 4 rerolls · 0g. DEF comes from ATK combos. */
 export const CHARACTERS: CharacterKit[] = [
   {
     name: 'Paladín',
     lore: 'Escudo sagrado del frente.',
     locked: false,
-    buff: 'Los combos suben un nivel de defensa',
-    handicap: 'Solo 3 dados de ataque',
+    buff: 'Firma: Barrier y Fortify',
+    handicap: 'Menos daño inicial',
     maxHp: 50,
-    startingDice: [
-      makeDie('d0', 'bulwark'),
-      makeDie('d1'),
-      makeDie('d2'),
-    ],
-    rerollAtk: 4,
+    signatureCards: ['barrier', 'fortify', 'guard'],
     startGold: 0,
   },
   {
     name: 'Mago',
     lore: 'Domina las artes arcanas.',
     locked: false,
-    buff: 'La mejor cara 5 o 6 cuenta doble en combo',
+    buff: 'Firma: Plague y Blight',
     handicap: 'Muy poca vida',
     maxHp: 20,
-    startingDice: [
-      makeDie('d0', 'arcane'),
-      makeDie('d1'),
-      makeDie('d2'),
-      makeDie('d3'),
-      makeDie('d4'),
-    ],
-    rerollAtk: 4,
+    signatureCards: ['plague', 'blight', 'toxin'],
     startGold: 0,
   },
   {
     name: 'Pícaro',
     lore: 'Veloz y letal desde las sombras.',
     locked: false,
-    buff: 'Al tirar: +1 reintento',
-    handicap: 'Poca vida y pocos dados',
+    buff: 'Firma: Poison Stab y Venom',
+    handicap: 'Poca vida',
     maxHp: 25,
-    startingDice: [
-      makeDie('d0', 'swift'),
-      makeDie('d1'),
-      makeDie('d2'),
-    ],
-    rerollAtk: 4,
+    signatureCards: ['poison_stab', 'venom', 'slash'],
     startGold: 0,
   },
   {
     name: 'Clérigo',
     lore: 'Sanador y protector divino.',
     locked: false,
-    buff: 'La mitad del dano sobrante cura vida',
+    buff: 'Firma: Restore y Mend',
     handicap: 'Poca vida',
     maxHp: 25,
-    startingDice: [
-      makeDie('d0', 'mercy'),
-      makeDie('d1'),
-      makeDie('d2'),
-      makeDie('d3'),
-      makeDie('d4'),
-    ],
-    rerollAtk: 4,
+    signatureCards: ['restore', 'mend', 'salve'],
     startGold: 0,
   },
   {
     name: 'Bárbaro',
     lore: 'Furia imparable en batalla.',
     locked: false,
-    buff: 'Sin reintentos: +20% de dano',
-    handicap: 'Solo 2 reintentos por turno',
+    buff: 'Firma: Crush y Bash',
+    handicap: 'Sin curación firma',
     maxHp: 40,
-    startingDice: [
-      makeDie('d0', 'rage'),
-      makeDie('d1'),
-      makeDie('d2'),
-      makeDie('d3'),
-      makeDie('d4'),
-    ],
-    rerollAtk: 2,
+    signatureCards: ['crush', 'bash', 'slash'],
     startGold: 0,
   },
 ]
@@ -108,9 +74,4 @@ export function applyCharacterKit(state: RunState, kit: CharacterKit) {
   state.maxHp = kit.maxHp
   state.hp = kit.maxHp
   state.coins = kit.startGold
-  // Deep-copy so run mutations don't leak into CHARACTERS definitions.
-  state.dice = kit.startingDice.map(d =>
-    makeDie(d.id, d.abilityId, [...d.faces] as RunDie['faces']),
-  )
-  state.rerollMax = { atk: kit.rerollAtk }
 }

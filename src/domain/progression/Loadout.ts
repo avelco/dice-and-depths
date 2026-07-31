@@ -4,7 +4,6 @@ import { affixAsMod, affixDef } from '../items/Affixes'
 import { GEAR_SLOTS, RUNE_SLOT_COUNT, type GearSlot } from '../items/Item'
 import { MetaProgression, type MetaLoadout } from './MetaProgression'
 import { syncRunStateDerived, type RunState } from './RunState'
-import { addDie } from '../dice/DicePool'
 
 export type GearLoadout = Record<GearSlot, string | null>
 export type RuneLoadout = [string | null, string | null, string | null]
@@ -75,12 +74,14 @@ export function applyLoadoutToRun(state: RunState) {
   const meta = MetaProgression.load()
   const mods = sumLoadoutMods(meta.loadout)
 
-  state.maxHp += mods.maxHp
+  // Remap obsolete dice/reroll rune stats → HP / flat damage.
+  state.maxHp += mods.maxHp + mods.diceAtk * 2
   state.hp = state.maxHp
   state.coins += mods.startGold
-  for (let i = 0; i < mods.diceAtk; i++) addDie(state.dice)
-  state.rerollMax = { atk: state.rerollMax.atk + mods.rerollAtk }
   state.bonusDefFlat = mods.defFlat
-  state.bonusDmgFlat = mods.dmgFlat
+  state.bonusDmgFlat = mods.dmgFlat + mods.rerollAtk
+  state.deckDefs = [...meta.activeDeck]
+  state.actionSlots = meta.actionSlots
+  state.heroShield = mods.defFlat
   syncRunStateDerived(state)
 }

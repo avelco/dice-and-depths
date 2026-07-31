@@ -1,10 +1,4 @@
 import type { MapNodeKind } from '../map/NodeTypes'
-import type { RunDie } from '../dice/Die'
-import { makeBasicDice } from '../dice/Die'
-
-export interface RerollMax {
-  atk: number
-}
 
 export interface MapNodeSnapshot {
   id: number
@@ -36,23 +30,28 @@ export class RunState {
   characterName = 'Paladín'
   seed = 0
   passives: string[] = []
-  /** Active attack dice for this run. */
-  dice: RunDie[] = makeBasicDice(4)
-  rerollMax: RerollMax = { atk: 4 }
+  /** Copy of meta active deck for this run (defIds as RunCards built at start). */
+  deckDefs: string[] = []
+  /** Action slots for this run (from meta). */
+  actionSlots = 2
   currentNodeId: number | null = null
   map: MapSnapshot | null = null
   secondWindUsedThisFloor = false
   pendingNodeKind: MapNodeKind | null = null
   pendingRewardTier: RewardTier = 'normal'
 
-  /** Flat DEF from meta gear loadout (frozen at run start). */
+  /** Flat DEF from meta gear — remapped as start shield bonus. */
   bonusDefFlat = 0
-  /** Flat DMG from meta gear/runes (frozen at run start). */
+  /** Flat DMG from meta gear/runes. */
   bonusDmgFlat = 0
+
+  /** Combat-persistent statuses (survive between enemies in a wave). */
+  heroShield = 0
+  heroPoison = 0
 }
 
 export function syncRunStateDerived(_state: RunState) {
-  // No-op kept for call-site compatibility; dice/rerolls are no longer mirrored.
+  // No-op kept for call-site compatibility.
 }
 
 export function createNewRun(characterName: string, seed = Date.now()): RunState {

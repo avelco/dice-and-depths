@@ -15,6 +15,12 @@ import {
   skillTreeNode,
   unlockedPassiveIds,
 } from './SkillTree'
+import { cardDef } from '../cards/Card'
+import {
+  DEFAULT_ACTION_SLOTS,
+  MAX_ACTION_SLOTS,
+} from '../cards/Deck'
+import { DECK_SIZE } from '../cards/Packs'
 
 export interface GearForgeState {
   appliedAffixId: string | null
@@ -56,6 +62,14 @@ export interface MetaSave {
   gearForge: Record<string, GearForgeState>
   /** First-run onboarding finished (veterans without flag load as true). */
   tutorialDone: boolean
+  /** First-account starter packs opened once. */
+  starterPacksOpened: boolean
+  /** All card def ids obtained (duplicates allowed). */
+  cardCollection: string[]
+  /** Active deck between runs (def ids, length DECK_SIZE). */
+  activeDeck: string[]
+  /** Combat action slots (2–3). */
+  actionSlots: number
 }
 
 const META_KEY = 'dnd_meta_v1'
@@ -137,6 +151,23 @@ function normalizeGearForge(raw: unknown): Record<string, GearForgeState> {
   return out
 }
 
+function normalizeCardIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((id): id is string => typeof id === 'string' && !!cardDef(id))
+}
+
+function normalizeActiveDeck(raw: unknown, collection: string[]): string[] {
+  const ids = normalizeCardIds(raw)
+  if (ids.length >= DECK_SIZE) return ids.slice(0, DECK_SIZE)
+  const deck = [...ids]
+  for (const id of collection) {
+    if (deck.length >= DECK_SIZE) break
+    deck.push(id)
+  }
+  while (deck.length < DECK_SIZE) deck.push('strike')
+  return deck.slice(0, DECK_SIZE)
+}
+
 function defaultMeta(): MetaSave {
   return {
     gold: 0,
@@ -154,6 +185,10 @@ function defaultMeta(): MetaSave {
     fragments: emptyFragments(),
     gearForge: {},
     tutorialDone: false,
+    starterPacksOpened: false,
+    cardCollection: [],
+    activeDeck: Array.from({ length: DECK_SIZE }, () => 'strike'),
+    actionSlots: DEFAULT_ACTION_SLOTS,
   }
 }
 
@@ -226,6 +261,9 @@ export class MetaProgression {
         gear: normalizeGearLoadout(data.loadout?.gear),
         runes: normalizeRuneLoadout(data.loadout?.runes),
       }
+      const collection = normalizeCardIds(data.cardCollection)
+      const slotsRaw =
+        typeof data.actionSlots === 'number' ? Math.floor(data.actionSlots) : DEFAULT_ACTION_SLOTS
       const meta: MetaSave = {
         gold: typeof data.gold === 'number' ? data.gold : 0,
         campaignFloor: normalizeCampaignFloor(data.campaignFloor),
@@ -243,6 +281,13 @@ export class MetaProgression {
         gearForge: normalizeGearForge(data.gearForge),
         // Existing saves without the field are treated as already onboarded.
         tutorialDone: data.tutorialDone === true || data.tutorialDone === undefined,
+        // Existing accounts skip starter packs; only brand-new saves open them.
+        starterPacksOpened:
+          data.starterPacksOpened === true ||
+          (data.starterPacksOpened === undefined && data.tutorialDone !== false),
+        cardCollection: collection,
+        activeDeck: normalizeActiveDeck(data.activeDeck, collection),
+        actionSlots: Math.min(MAX_ACTION_SLOTS, Math.max(DEFAULT_ACTION_SLOTS, slotsRaw)),
       }
       setLocale(meta.locale)
       return meta
@@ -492,5 +537,83 @@ export class MetaProgression {
     meta.inventory.runes.push(prev)
     MetaProgression.save(meta)
     return true
+  }
+
+  static hasOpenedStarterPacks(): boolean {
+    return MetaProgression.load().starterPacksOpened
+  }
+
+  static getCardCollection(): string[] {
+    return [...MetaProgression.load().cardCollection]
+  }
+
+  static getActiveDeck(): string[] {
+    return [...MetaProgression.load().activeDeck]
+  }
+
+  static getActionSlots(): number {
+    return MetaProgression.load().actionSlots
+  }
+
+  static addCardsToCollection(defIds: string[]) {
+    const meta = MetaProgression.load()
+    for (const id of defIds) {
+      if (cardDef(id)) meta.cardCollection.push(id)
+    }
+    MetaProgression.save(meta)
+  }
+
+  static markStarterPacksOpened() {
+    const meta = MetaProgression.load()
+    meta.starterPacksOpened = true
+    MetaProgression.save(meta)
+  }
+
+  static setActiveDeck(defIds: string[]): boolean {
+    const ids = defIds.filter(id => !!cardDef(id))
+    if (ids.length !== DECK_SIZE) return false
+    const meta = MetaProgression.load()
+    // Validate multiplicity against collection
+    const need = new Map<string, number>()
+    for (const id of ids) need.set(id, (need.get(id) ?? 0) + 1)
+    const have = new Map<string, number>()
+    for (const id of meta.cardCollection) have.set(id, (have.get(id) ?? 0) + 1)
+    for (const [id, n] of need) {
+      if ((have.get(id) ?? 0) < n) return false
+    }
+    meta.activeDeck = ids
+    MetaProgression.save(meta)
+    return true
+  }
+
+  /** Cost 1 skill point to unlock +1 action slot (max 3). */
+  static tryUnlockActionSlot(): boolean {
+    const meta = MetaProgression.load()
+    if (meta.actionSlots >= MAX_ACTION_SLOTS) return false
+    if (meta.skillPoints < 1) return false
+    meta.skillPoints -= 1
+    meta.actionSlots += 1
+    MetaProgression.save(meta)
+    return true
+  }
+
+  /** After opening starter packs: set collection + active deck. */
+  static commitStarterPacks(defIds: string[], signatureIds: string[] = []) {
+    const meta = MetaProgression.load()
+    meta.cardCollection = defIds.filter(id => !!cardDef(id))
+    const deck: string[] = []
+    for (const id of signatureIds) {
+      if (meta.cardCollection.includes(id) && deck.length < DECK_SIZE) deck.push(id)
+    }
+    for (const id of meta.cardCollection) {
+      if (deck.length >= DECK_SIZE) break
+      const used = deck.filter(x => x === id).length
+      const owned = meta.cardCollection.filter(x => x === id).length
+      if (used < owned) deck.push(id)
+    }
+    while (deck.length < DECK_SIZE) deck.push('strike')
+    meta.activeDeck = deck.slice(0, DECK_SIZE)
+    meta.starterPacksOpened = true
+    MetaProgression.save(meta)
   }
 }

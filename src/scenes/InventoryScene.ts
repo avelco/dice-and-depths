@@ -125,7 +125,7 @@ export class InventoryScene extends Phaser.Scene {
     const mods = sumLoadoutMods(meta.loadout)
     this.statsText.setText(
       `HP+${mods.maxHp}  DEF+${mods.defFlat}  DMG+${mods.dmgFlat}  ` +
-        `dado+${mods.diceAtk}  R+${mods.rerollAtk}  ${t('inv.coinsBonus', { n: mods.startGold })}` +
+        `HP+${mods.diceAtk * 2}  DMG+${mods.rerollAtk}  ${t('inv.coinsBonus', { n: mods.startGold })}` +
         `  |  ${t('inv.metaGold', { n: MetaProgression.getGold() })}`,
     )
     const fr = MetaProgression.getFragments()

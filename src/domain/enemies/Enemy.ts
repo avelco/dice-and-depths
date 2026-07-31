@@ -15,6 +15,21 @@ interface EnemyTemplate {
 
 const TEMPLATES = enemiesData as EnemyTemplate[]
 
+const ENEMY_DECKS: Record<string, string[]> = {
+  normal: [
+    'strike', 'strike', 'bash', 'guard', 'toxin',
+    'salve', 'venom', 'barrier', 'slash', 'mend',
+  ],
+  elite: [
+    'bash', 'slash', 'venom', 'plague', 'barrier',
+    'fortify', 'poison_stab', 'shield_bash', 'mend', 'strike',
+  ],
+  boss: [
+    'crush', 'slash', 'plague', 'blight', 'aegis',
+    'fortify', 'poison_stab', 'shield_bash', 'restore', 'bash',
+  ],
+}
+
 function mulberry32(seed: number) {
   return () => {
     seed |= 0
@@ -32,10 +47,13 @@ export class Enemy {
   hp: number
   defense: number
   skill: EnemySkill
-  atkDiceCount: number
-  rerollMax: number
+  /** Card def ids for this enemy's combat deck. */
+  deckDefs: string[]
+  actionSlots: number
   turnCount = 0
   bonusDef = 0
+  shield = 0
+  poison = 0
 
   constructor(
     templateId: string,
@@ -43,8 +61,8 @@ export class Enemy {
     hp: number,
     defense: number,
     skill: EnemySkill,
-    atkDiceCount: number,
-    rerollMax: number,
+    deckDefs: string[],
+    actionSlots: number,
   ) {
     this.templateId = templateId
     this.name = name
@@ -52,8 +70,8 @@ export class Enemy {
     this.hp = hp
     this.defense = defense
     this.skill = skill
-    this.atkDiceCount = atkDiceCount
-    this.rerollMax = rerollMax
+    this.deckDefs = deckDefs
+    this.actionSlots = actionSlots
   }
 
   get totalDefense(): number {
@@ -79,17 +97,23 @@ export class Enemy {
     const tpl = pool[Math.floor(rng() * pool.length)] ?? TEMPLATES[0]
 
     const scale = kind === 'boss' ? 1.55 : kind === 'elite' ? 1.15 : 1
-    // Tuned for count×face combos: ~2–4 player hits on floor 1
-    const baseHp = 24 + Math.floor(rng() * 8) // 24–31
-    const hp = Math.floor((baseHp + floor * 5) * scale + rng() * 3)
+    const baseHp = 28 + Math.floor(rng() * 10)
+    const hp = Math.floor((baseHp + floor * 6) * scale + rng() * 3)
     const def = Math.floor((tpl.baseDef + floor * 0.5) * scale)
-    const atkDiceCount = kind === 'boss' ? 3 : kind === 'elite' ? 3 : 2
-    const rerollMax = kind === 'boss' ? 2 : kind === 'elite' ? 2 : 1
+    const deckKey = kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal'
+    const actionSlots = kind === 'boss' ? 3 : 2
 
-    return new Enemy(tpl.id, tpl.name, hp, def, tpl.skill, atkDiceCount, rerollMax)
+    return new Enemy(
+      tpl.id,
+      tpl.name,
+      hp,
+      def,
+      tpl.skill,
+      [...ENEMY_DECKS[deckKey]!],
+      actionSlots,
+    )
   }
 
-  /** Most nodes: 2–3 foes. Elite: 2–3. Boss: 1 (tankier). */
   static waveForNode(
     kind: MapNodeKind,
     floor: number,

@@ -5,6 +5,7 @@ import { bindSceneKeys } from '../systems/bindSceneKeys'
 import { t } from '../i18n/I18n'
 import { enableTouchTarget } from '../ui/touchTarget'
 import { AudioSystem } from '../systems/AudioSystem'
+import { SaveSystem } from '../systems/SaveSystem'
 
 interface GameOverData {
   runState?: import('../domain/progression/RunState').RunState
@@ -24,6 +25,7 @@ export class GameOverScene extends Phaser.Scene {
     const victory = !!data.victory
 
     if (rs) renderDebugHeader(this, rs)
+    SaveSystem.abandonQuicksave()
 
     if (victory) {
       addPixelText(this, cx, 48, t('gameover.victory'), {
@@ -38,17 +40,30 @@ export class GameOverScene extends Phaser.Scene {
       }).setOrigin(0.5)
     }
 
-    const menuBtn = addPixelText(this, cx, height - 40, t('gameover.menu'), {
+    const packBtn = addPixelText(this, cx, height - 56, t('gameover.openPacks'), {
+      fontSize: '12px', color: '#ffcc66',
+    }).setOrigin(0.5)
+    enableTouchTarget(packBtn, { min: 36 })
+    packBtn.on('pointerdown', () => {
+      AudioSystem.play('select')
+      this.scene.start('PackOpenScene', {
+        mode: 'endRun',
+        runState: rs,
+        victory,
+      })
+    })
+
+    const menuBtn = addPixelText(this, cx, height - 28, t('gameover.menu'), {
       fontSize: '10px', color: '#dddddd',
     }).setOrigin(0.5)
-    enableTouchTarget(menuBtn, { min: 36 })
-    menuBtn.on('pointerover', () => menuBtn.setColor('#ffffff'))
-    menuBtn.on('pointerout', () => menuBtn.setColor('#dddddd'))
+    enableTouchTarget(menuBtn, { min: 28 })
     menuBtn.on('pointerdown', () => {
       AudioSystem.play('ui')
       this.scene.start('MenuScene')
     })
     bindSceneKeys(this, {
+      'keydown-ENTER': () =>
+        this.scene.start('PackOpenScene', { mode: 'endRun', runState: rs, victory }),
       'keydown-M': () => this.scene.start('MenuScene'),
     })
   }
